@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: fluentd-elasticsearch
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      name: checkpointer
+  template:
+    metadata:
+      labels:
+        name: checkpointer
+    spec:
+      hostNetwork: true
+      containers:
+        - name: checkpointer
+          image: pbaran555/checkpointer:latest
+          ports:
+            - containerPort: 3333
+          envFrom:
+            - secretRef:
+                name: container-registry-credentials
+            - configMapRef:
+                name: checkpointer-cm
+          resources:
+            limits:
+              cpu: 100m
+              memory: 200Mi
+            requests:
+              cpu: 100m
+              memory: 200Mi
+          volumeMounts:
+            - name: checkpoints-tar-dir
+              mountPath: /var/lib/kubelet/checkpoints
+            - name: cert-dir
+              mountPath: /etc/kubernetes/pki
+      volumes:
+        - name: checkpoints-tar-dir
+          hostPath:
+            path: /var/lib/kubelet/checkpoints
+        - name: cert-dir
+          hostPath:
+            path: /etc/kubernetes/pki

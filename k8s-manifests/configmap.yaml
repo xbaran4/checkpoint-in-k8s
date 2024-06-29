@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: checkpointer-cm
+  namespace: kube-system
+data:
+  KUBELET_PORT: "10250"
+  KUBELET_CERT_FILE: "/etc/kubernetes/apiserver-kubelet-client.crt"
+  KUBELET_CERT_KEY": "/etc/kubernetes/apiserver-kubelet-client.key"
