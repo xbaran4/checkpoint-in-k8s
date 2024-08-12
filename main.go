@@ -16,8 +16,6 @@ type KubeletCheckpointResponse struct {
 	Items []string `json:"items"`
 }
 
-var serverPort = os.Getenv("KUBELET_PORT")
-
 func main() {
 	http.HandleFunc("/checkpoint", checkpoint)
 	log.Println("starting http server")
@@ -71,7 +69,7 @@ func checkpoint(writer http.ResponseWriter, request *http.Request) {
 // TODO: extract callKubeletCheckpoint and createCheckpointImage into separate interfaces
 
 func callKubeletCheckpoint(containerPath string) (string, error) {
-	requestURL := fmt.Sprintf("http://localhost:%s%s", serverPort, containerPath)
+	requestURL := fmt.Sprintf("http://localhost:%s%s", os.Getenv("KUBELET_PORT"), containerPath)
 
 	req, err := http.NewRequest(http.MethodGet, requestURL, nil)
 	if err != nil {
@@ -120,7 +118,7 @@ func createCheckpointImage(checkpointTarName, newContainerImageName string) erro
 	if err != nil {
 		return err
 	}
-	_, err = exec.Command("buildah", "config", "--annotation=io.kubernetes.cri-o.annotations.checkpoint.name=checkpoint-name", workingContainer).Output()
+	_, err = exec.Command("buildah", "config", "--annotation="+os.Getenv("CHECKPOINT_ANNOTATION")+"=hardcoded-checkpoint-name", workingContainer).Output()
 	if err != nil {
 		return err
 	}

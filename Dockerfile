@@ -21,6 +21,8 @@ ENV KUBELET_PORT="10250"
 ENV KUBELET_CERT_FILE="/etc/kubernetes/pki/apiserver-kubelet-client.crt"
 ENV KUBELET_CERT_KEY="/etc/kubernetes/pki/apiserver-kubelet-client.key"
 
+ENV CHECKPOINT_ANNOTATION="org.criu.checkpoint.container.name"
+
 ENV REGISTRY_USERNAME="user"
 ENV REGISTRY_PASSWORD="pass"
 
