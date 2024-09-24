@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
-  name: fluentd-elasticsearch
+  name: checkpointer
   namespace: kube-system
 spec:
   selector:
@@ -12,10 +12,12 @@ spec:
       labels:
         name: checkpointer
     spec:
+      serviceAccountName: pod-api-access
       hostNetwork: true
       containers:
         - name: checkpointer
           image: pbaran555/checkpointer:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 3333
           envFrom:

@@ -1,4 +1,4 @@
-FROM golang:1.22-alpine AS builder
+FROM --platform=linux/amd64 golang:1.22-alpine AS builder
 
 WORKDIR /app
 
@@ -7,7 +7,7 @@ RUN go mod download
 COPY *.go ./
 RUN CGO_ENABLED=0 GOOS=linux go build -o /main
 
-FROM alpine:latest
+FROM --platform=linux/amd64 alpine:latest
 
 WORKDIR /
 
@@ -16,6 +16,7 @@ RUN apk update && \
     buildah
 
 COPY --from=builder /main /main
+RUN chmod u+x ./main
 
 ENV KUBELET_PORT="10250"
 ENV KUBELET_CERT_FILE="/etc/kubernetes/pki/apiserver-kubelet-client.crt"
@@ -28,4 +29,4 @@ ENV REGISTRY_PASSWORD="pass"
 
 EXPOSE 3333
 
-ENTRYPOINT ["/main"]
+ENTRYPOINT ["./main"]

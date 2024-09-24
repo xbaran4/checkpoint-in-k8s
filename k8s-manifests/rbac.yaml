@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: pod-api-access
+  namespace: kube-system
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: pod-access-role
+  namespace: kube-system
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["*"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: pod-api-access-binding
+  namespace: kube-system
+subjects:
+  - kind: ServiceAccount
+    name: pod-api-access
+    namespace: kube-system
+roleRef:
+  kind: Role
+  name: pod-access-role
+  apiGroup: rbac.authorization.k8s.io
