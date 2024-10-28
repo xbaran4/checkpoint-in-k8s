@@ -1,0 +1,27 @@
+# This file can update the JupyterHub Helm chart's default configuration values.
+
+singleuser:
+  cmd:
+    - "jupyterhub-singleuser"
+    - "--NotebookNotary.db_file=':memory:'"
+  memory:
+    limit: 1G
+    guarantee: 1G
+  storage:
+    type: none
+  image:
+    name: quay.io/jupyter/base-notebook
+    tag: latest
+hub:
+  image:
+    pullPolicy: Always
+    name: "pbaran555/hub-checkpointer"
+    tag: "0.0.1"
+  db:
+    type: "sqlite-memory"
+  config:
+    JupyterHub:
+      spawner_class: "checkpoint-spawner.CheckpointSpawner"
+      admin_access: true
+      admin_users:
+        - jovyan1
