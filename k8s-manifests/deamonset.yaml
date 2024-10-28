@@ -6,11 +6,11 @@ metadata:
 spec:
   selector:
     matchLabels:
-      name: checkpointer
+      app.kubernetes.io/name: checkpointer
   template:
     metadata:
       labels:
-        name: checkpointer
+        app.kubernetes.io/name: checkpointer
     spec:
       serviceAccountName: pod-api-access
       hostNetwork: true

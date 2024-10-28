@@ -2,7 +2,10 @@ apiVersion: v1
 kind: Service
 metadata:
   name: checkpoint-service
+  namespace: kube-system
 spec:
+  selector:
+    app.kubernetes.io/name: checkpointer
   ports:
     - name: http
       protocol: TCP

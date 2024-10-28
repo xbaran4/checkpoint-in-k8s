@@ -1,0 +1,19 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "checkpoint-spawner"
+version = "0.0.7"
+authors = [
+  { name="Pavol Baran", email="492953@mail.muni.cz" },
+]
+description = "JupyterHub spawner built on Kubespawner, utilizing checkpoint/restore functionality in Kuberentes."
+readme = "README.md"
+requires-python = ">=3.8"
+
+[project.urls]
+Homepage = "https://github.com/xbaran4/checkpoint-in-k8s"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/checkpoint-spawner"]

@@ -7,4 +7,4 @@ data:
   KUBELET_PORT: "10250"
   KUBELET_CERT_FILE: "/etc/kubernetes/pki/apiserver-kubelet-client.crt"
   KUBELET_CERT_KEY: "/etc/kubernetes/pki/apiserver-kubelet-client.key"
-  CHECKPOINT_ANNOTATION: "org.criu.checkpoint.container.name"
+  CHECKPOINT_BASE_IMAGE: "pbaran555/checkpoint-base"

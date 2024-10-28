@@ -1,32 +1,29 @@
 FROM --platform=linux/amd64 golang:1.22-alpine AS builder
 
-WORKDIR /app
+WORKDIR /app-source
 
-COPY go.mod ./
+COPY go.mod go.sum ./
 RUN go mod download
-COPY *.go ./
-RUN CGO_ENABLED=0 GOOS=linux go build -o /main
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -o /checkpointer ./cmd/checkpointer
 
 FROM --platform=linux/amd64 alpine:latest
 
-WORKDIR /
+WORKDIR /checkpointer-app
 
-RUN apk update && \
-    apk add --no-cache \
-    buildah
-
-COPY --from=builder /main /main
-RUN chmod u+x ./main
+COPY --from=builder /checkpointer ./checkpointer
+COPY internal/templates/dockerfile.tmpl ./dockerfile.tmpl
+RUN chmod u+x ./checkpointer
 
 ENV KUBELET_PORT="10250"
 ENV KUBELET_CERT_FILE="/etc/kubernetes/pki/apiserver-kubelet-client.crt"
 ENV KUBELET_CERT_KEY="/etc/kubernetes/pki/apiserver-kubelet-client.key"
 
-ENV CHECKPOINT_ANNOTATION="org.criu.checkpoint.container.name"
+ENV CHECKPOINT_BASE_IMAGE="pbaran555/checkpoint-base"
 
 ENV REGISTRY_USERNAME="user"
 ENV REGISTRY_PASSWORD="pass"
 
 EXPOSE 3333
 
-ENTRYPOINT ["./main"]
+ENTRYPOINT ["./checkpointer"]

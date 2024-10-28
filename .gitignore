@@ -1,1 +1,9 @@
+# IDE
 .idea/
+
+# Python
+*/dist/
+*/.venv/
+
+# Mac
+*/.DS_Store
