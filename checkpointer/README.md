@@ -18,3 +18,9 @@ curl "http://localhost:3333/checkpoint" \
 --data '{"containerPath": "default/timer-sleep/timer", "containerImageName": "pbaran555/kaniko-checkpointed"}' \
 --verbose
 ```
+
+## Checking checkpoint state
+```shell
+curl "http://localhost:3333/checkpoint?containerPath=default/timer-sleep/timer" \
+--verbose
+```

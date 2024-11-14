@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 )
 
-func addFileToTar(tw *tar.Writer, filePath string) error {
-	file, err := os.Open(filePath)
+func addFileToTar(tw *tar.Writer, actualFilepath, filenameInTar string) error {
+	file, err := os.Open(actualFilepath)
 	if err != nil {
 		return err
 	}
@@ -24,7 +24,7 @@ func addFileToTar(tw *tar.Writer, filePath string) error {
 	if err != nil {
 		return err
 	}
-	header.Name = filepath.Base(filePath)
+	header.Name = filepath.Base(filenameInTar)
 
 	if err := tw.WriteHeader(header); err != nil {
 		return err
@@ -38,25 +38,25 @@ func addFileToTar(tw *tar.Writer, filePath string) error {
 	return nil
 }
 
-func CreateTarGzTempFile(files []string) (string, error) {
-	tmpFile, err := os.CreateTemp("", "build-context-*.tar.gz")
+func CreateTarGzTempFile(filesMapping map[string]string) (string, error) {
+	tmpTarFile, err := os.CreateTemp("", "build-context-*.tar.gz")
 	if err != nil {
 		return "", err
 	}
-	defer tmpFile.Close()
+	defer tmpTarFile.Close()
 
-	gw := gzip.NewWriter(tmpFile)
+	gw := gzip.NewWriter(tmpTarFile)
 	defer gw.Close()
 
 	tw := tar.NewWriter(gw)
 	defer tw.Close()
 
-	for _, file := range files {
-		if err := addFileToTar(tw, file); err != nil {
-			defer os.Remove(tmpFile.Name())
+	for actualFilepath, filenameInTar := range filesMapping {
+		if err := addFileToTar(tw, actualFilepath, filenameInTar); err != nil {
+			os.Remove(tmpTarFile.Name())
 			return "", err
 		}
 	}
 
-	return tmpFile.Name(), nil
+	return tmpTarFile.Name(), nil
 }

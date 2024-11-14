@@ -25,7 +25,8 @@ func main() {
 	}
 
 	cpHandler := web.NewCheckpointHandler(clientset, config)
-	http.HandleFunc("/checkpoint", cpHandler.Handle)
+	http.HandleFunc("POST /checkpoint", cpHandler.HandleCheckpointAsync)
+	http.HandleFunc("GET /checkpoint", cpHandler.HandleCheckState)
 
 	log.Println("starting http server")
 	err = http.ListenAndServe(":3333", nil)

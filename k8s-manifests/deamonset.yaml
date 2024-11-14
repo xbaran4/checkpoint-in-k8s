@@ -27,20 +27,26 @@ spec:
                 name: checkpointer-cm
           resources:
             limits:
-              cpu: 100m
-              memory: 200Mi
+              cpu: "1"
+              memory: 1Gi
             requests:
               cpu: 100m
               memory: 200Mi
           volumeMounts:
             - name: checkpoints-tar-dir
               mountPath: /var/lib/kubelet/checkpoints
+            - name: build-contexts-dir
+              mountPath: /tmp/build-contexts
             - name: cert-dir
               mountPath: /etc/kubernetes/pki
       volumes:
         - name: checkpoints-tar-dir
           hostPath:
             path: /var/lib/kubelet/checkpoints
+        - name: build-contexts-dir
+          hostPath:
+            type: DirectoryOrCreate
+            path: /tmp/build-contexts
         - name: cert-dir
           hostPath:
             path: /etc/kubernetes/pki

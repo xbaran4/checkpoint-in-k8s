@@ -16,7 +16,7 @@ import (
 
 const checkpointerNamespace = "kube-system"
 
-func CreateKanikoPod(c kubernetes.Interface, newContainerImageName, dockerfilePath string) (string, error) {
+func CreateKanikoPod(c kubernetes.Interface, newContainerImageName string) (string, error) {
 	pod := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: "kaniko-",
@@ -27,7 +27,7 @@ func CreateKanikoPod(c kubernetes.Interface, newContainerImageName, dockerfilePa
 					Name:  "kaniko",
 					Image: "gcr.io/kaniko-project/executor:latest",
 					Args: []string{
-						"--dockerfile=" + dockerfilePath,
+						"--dockerfile=Dockerfile",
 						"--context=tar://stdin",
 						"--destination=" + newContainerImageName,
 						"--label=\"org.criu.checkpoint.container.name=value\"",
@@ -71,9 +71,14 @@ func CreateKanikoPod(c kubernetes.Interface, newContainerImageName, dockerfilePa
 }
 
 func DeleteKanikoPod(clientset *kubernetes.Clientset, podName string) error {
-	err := clientset.CoreV1().Pods(checkpointerNamespace).Delete(context.TODO(), podName, metav1.DeleteOptions{})
+	return DeletePod(clientset, checkpointerNamespace, podName)
+}
+
+func DeletePod(clientset *kubernetes.Clientset, namespace, podName string) error {
+	log.Printf("deleting pod %s/%s", namespace, podName)
+	err := clientset.CoreV1().Pods(namespace).Delete(context.TODO(), podName, metav1.DeleteOptions{})
 	if err != nil {
-		return fmt.Errorf("failed to delete %s/%s pod: %w", checkpointerNamespace, podName, err)
+		return fmt.Errorf("failed to delete %s/%s pod: %w", namespace, podName, err)
 	}
 	return nil
 }
@@ -103,7 +108,7 @@ func AttachToPod(clientset *kubernetes.Clientset, config *restclient.Config, pod
 	}
 	defer buildContextFile.Close()
 
-	err = waitForPodRunning(clientset, podName, time.Second*15) // TODO: make timeout env var
+	err = waitForPodRunning(clientset, podName, time.Second*30) // TODO: make timeout env var
 	if err != nil {
 		return fmt.Errorf("timed out waiting for kaniko to start: %w", err)
 	}

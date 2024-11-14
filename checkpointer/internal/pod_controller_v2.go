@@ -1,0 +1,76 @@
+package internal
+
+import (
+	"context"
+	"fmt"
+	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+)
+
+func CreateKanikoPodV2(c kubernetes.Interface, newContainerImageName, dockerfilePath, buildContextPath string) (string, error) {
+	hostPathType := v1.HostPathDirectory
+	pod := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			GenerateName: "kaniko-",
+		},
+		Spec: v1.PodSpec{
+			Containers: []v1.Container{
+				{
+					Name:  "kaniko",
+					Image: "gcr.io/kaniko-project/executor:latest",
+					Args: []string{
+						"--dockerfile=/kaniko-build-context/Dockerfile",
+						"--context=dir:///kaniko-build-context",
+						"--destination=" + newContainerImageName,
+					},
+					Stdin:     true,
+					StdinOnce: true,
+					VolumeMounts: []v1.VolumeMount{
+						{
+							Name:      "kaniko-secret",
+							MountPath: "/kaniko/.docker",
+						},
+						{
+							Name:      "build-context",
+							MountPath: "/kaniko-build-context",
+						},
+					},
+				},
+			},
+			RestartPolicy: v1.RestartPolicyNever,
+			Volumes: []v1.Volume{
+				{
+					Name: "kaniko-secret",
+					VolumeSource: v1.VolumeSource{
+						Secret: &v1.SecretVolumeSource{
+							SecretName: "kaniko-secret",
+							Items: []v1.KeyToPath{
+								{
+									Key:  ".dockerconfigjson",
+									Path: "config.json",
+								},
+							},
+						},
+					},
+				},
+				{
+					Name: "build-context",
+					VolumeSource: v1.VolumeSource{
+						HostPath: &v1.HostPathVolumeSource{
+							Type: &hostPathType,
+							Path: buildContextPath,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	pod, err := c.CoreV1().Pods(checkpointerNamespace).Create(context.TODO(), pod, metav1.CreateOptions{})
+	if err != nil {
+		return "", fmt.Errorf("failed to create pod: %w", err)
+	}
+
+	return pod.GetName(), nil
+}
