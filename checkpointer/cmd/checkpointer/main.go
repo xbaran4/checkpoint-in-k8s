@@ -7,10 +7,16 @@ import (
 	"k8s.io/client-go/rest"
 	"log"
 	"net/http"
+	"os"
 )
 
 var clientset *kubernetes.Clientset
 var config *rest.Config
+
+type handler interface {
+	HandleCheckpoint(http.ResponseWriter, *http.Request)
+	HandleCheckState(http.ResponseWriter, *http.Request)
+}
 
 func main() {
 	var err error
@@ -24,9 +30,15 @@ func main() {
 		panic(err.Error())
 	}
 
-	cpHandler := web.NewCheckpointHandler(clientset, config)
-	http.HandleFunc("POST /checkpoint", cpHandler.HandleCheckpointAsync)
-	http.HandleFunc("GET /checkpoint", cpHandler.HandleCheckState)
+	// TODO: cumbersome design?
+	proxyLessHandler := web.NewCheckpointHandler(clientset, config, true, false)
+	var cpHandler handler = proxyLessHandler
+	if os.Getenv("PROXY_FORWARD") != "" {
+		cpHandler = web.NewProxyCheckpointHandler(clientset, config, proxyLessHandler, os.Getenv("NODE_NAME"))
+	}
+
+	http.HandleFunc("POST /checkpoint/{ns}/{pod}/{container}", cpHandler.HandleCheckpoint)
+	http.HandleFunc("GET /checkpoint/{ns}/{pod}/{container}", cpHandler.HandleCheckState)
 
 	log.Println("starting http server")
 	err = http.ListenAndServe(":3333", nil)

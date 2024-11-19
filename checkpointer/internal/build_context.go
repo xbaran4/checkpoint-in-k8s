@@ -43,7 +43,6 @@ func copyFile(src, dst string) error {
 	}
 	defer destinationFile.Close()
 
-	// Copy the contents from source to destination
 	_, err = io.Copy(destinationFile, sourceFile)
 	return err
 }

@@ -21,7 +21,7 @@ hub:
     type: "sqlite-memory"
   config:
     JupyterHub:
-      spawner_class: "checkpoint-spawner.CheckpointSpawner"
+      spawner_class: "checkpointer-spawner.CheckpointSpawner"
       admin_access: true
       admin_users:
         - jovyan1

@@ -1,7 +1,7 @@
 package web
 
 import (
-	"checkpoint-in-k8s/internal"
+	"checkpoint-in-k8s/pkg/checkpointer"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,6 +9,7 @@ import (
 	"k8s.io/client-go/rest"
 	"log"
 	"net/http"
+	"os"
 	"sync"
 )
 
@@ -37,52 +38,81 @@ func init() {
 }
 
 type CheckpointHandler struct {
-	clientset *kubernetes.Clientset
-	config    *rest.Config
+	checkpointer.Checkpointer
+	async bool
 }
 
-func NewCheckpointHandler(clientset *kubernetes.Clientset, config *rest.Config) *CheckpointHandler {
-	return &CheckpointHandler{clientset, config}
+func NewCheckpointHandler(client *kubernetes.Clientset, config *rest.Config, useKanikoStdin, async bool) *CheckpointHandler {
+	if useKanikoStdin {
+		return &CheckpointHandler{checkpointer.NewKanikoStdinCheckpointer(client, config, os.Getenv("POD_NAMESPACE")), async}
+	}
+	return &CheckpointHandler{checkpointer.NewKanikoFSCheckpointer(client, config, os.Getenv("POD_NAMESPACE")), async}
 }
 
-func (ch *CheckpointHandler) HandleCheckpointAsync(writer http.ResponseWriter, request *http.Request) {
-	body, err := io.ReadAll(request.Body)
+func (ch *CheckpointHandler) HandleCheckpoint(rw http.ResponseWriter, req *http.Request) {
+	body, err := io.ReadAll(req.Body)
 	if err != nil {
-		http.Error(writer, fmt.Sprintf("Unable to read request body: %s", err), http.StatusBadRequest)
+		http.Error(rw, fmt.Sprintf("Unable to read req body: %s", err), http.StatusBadRequest)
 		return
 	}
-	defer request.Body.Close()
+	defer req.Body.Close()
 
-	var checkpointRequest internal.CheckpointRequest
+	var checkpointRequest checkpointer.CheckpointRequest
 	if err := json.Unmarshal(body, &checkpointRequest); err != nil {
-		http.Error(writer, "Invalid JSON format", http.StatusBadRequest)
+		http.Error(rw, "Invalid JSON format", http.StatusBadRequest)
 		return
 	}
 
-	log.Printf("request to checkpoint '%s' as '%s'", checkpointRequest.ContainerPath, checkpointRequest.ContainerImageName)
+	containerIdentifier := getContainerIdentifier(req)
+	if containerIdentifier == nil {
+		http.Error(rw, "container path in format /{namespace}{pod}/{container} expected", http.StatusBadRequest)
+		return
+	}
+	checkpointRequest.ContainerIdentifier = *containerIdentifier
 
-	errChan := make(chan error)
-	c.Put(checkpointRequest.ContainerPath, errChan)
-	go func() {
-		err := checkpointRequest.Checkpoint(ch.clientset, ch.config)
-		if err != nil {
-			log.Printf("checkpoint failed: %s", err)
-			errChan <- err
-		}
-		log.Printf("checkpoint done, closing channel")
-		close(errChan)
-	}()
+	log.Printf("req to checkpointer '%s' as '%s'", checkpointRequest.ContainerIdentifier, checkpointRequest.ContainerImageName)
+	ch.doCheckpoint(rw, checkpointRequest)
+}
+
+func (ch *CheckpointHandler) doCheckpoint(writer http.ResponseWriter, checkpointRequest checkpointer.CheckpointRequest) {
+	if ch.async {
+		errChan := make(chan error)
+		c.Put(checkpointRequest.ContainerIdentifier.String(), errChan)
+		go func() {
+			err := ch.Checkpoint(checkpointRequest)
+			if err != nil {
+				log.Printf("checkpointer failed: %s", err)
+				errChan <- err
+			}
+			log.Printf("checkpointer done, closing channel")
+			close(errChan)
+		}()
+		writer.WriteHeader(http.StatusOK)
+		return
+	}
+
+	err := ch.Checkpoint(checkpointRequest)
+	if err != nil {
+		log.Printf("checkpointer failed: %s", err)
+		writer.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	log.Printf("checkpointer done")
 	writer.WriteHeader(http.StatusOK)
 }
 
-func (ch *CheckpointHandler) HandleCheckState(writer http.ResponseWriter, request *http.Request) {
-	containerPath := request.URL.Query().Get("containerPath")
-	log.Printf("request to check status of '%s'", containerPath)
-	shouldHang := request.URL.Query().Get("hang") != ""
-	errChan := c.Get(containerPath)
+func (ch *CheckpointHandler) HandleCheckState(rw http.ResponseWriter, req *http.Request) {
+	containerIdentifier := getContainerIdentifier(req)
+	if containerIdentifier == nil {
+		http.Error(rw, "container path in format /{namespace}{pod}/{container} expected", http.StatusBadRequest)
+		return
+	}
+	log.Printf("req to check status of '%s'", containerIdentifier)
+	shouldHang := req.URL.Query().Get("hang") != ""
+	errChan := c.Get(containerIdentifier.String())
 
 	if errChan == nil {
-		writer.WriteHeader(http.StatusNotFound)
+		rw.WriteHeader(http.StatusNotFound)
 		return
 	}
 
@@ -97,17 +127,30 @@ func (ch *CheckpointHandler) HandleCheckState(writer http.ResponseWriter, reques
 
 	select {
 	case err := <-errChan:
-		log.Printf("checkpoint is already done")
-		handleErr(writer, err)
+		log.Printf("checkpointer is already done")
+		handleErr(rw, err)
 		return
 	default:
 		if shouldHang {
-			log.Printf("waiting for checkpoint to finish")
+			log.Printf("waiting for checkpointer to finish")
 			err := <-errChan
-			handleErr(writer, err)
+			handleErr(rw, err)
 			return
 		}
 	}
 	log.Printf("checkpointing still in progress")
-	writer.WriteHeader(http.StatusNoContent)
+	rw.WriteHeader(http.StatusNoContent)
+}
+
+func getContainerIdentifier(req *http.Request) *checkpointer.ContainerIdentifier {
+	namespace := req.PathValue("ns")
+	pod := req.PathValue("pod")
+	container := req.PathValue("container")
+
+	if namespace == "" || pod == "" || container == "" {
+		return nil
+	}
+	return &checkpointer.ContainerIdentifier{
+		Namespace: namespace, PodName: pod, ContainerName: container,
+	}
 }

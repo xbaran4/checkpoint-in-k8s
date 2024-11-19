@@ -14,80 +14,37 @@ import (
 	"time"
 )
 
-const checkpointerNamespace = "kube-system"
+type PodController struct {
+	client kubernetes.Interface
+	config *restclient.Config
+}
 
-func CreateKanikoPod(c kubernetes.Interface, newContainerImageName string) (string, error) {
-	pod := &v1.Pod{
-		ObjectMeta: metav1.ObjectMeta{
-			GenerateName: "kaniko-",
-		},
-		Spec: v1.PodSpec{
-			Containers: []v1.Container{
-				{
-					Name:  "kaniko",
-					Image: "gcr.io/kaniko-project/executor:latest",
-					Args: []string{
-						"--dockerfile=Dockerfile",
-						"--context=tar://stdin",
-						"--destination=" + newContainerImageName,
-						"--label=\"org.criu.checkpoint.container.name=value\"",
-					},
-					Stdin:     true,
-					StdinOnce: true,
-					VolumeMounts: []v1.VolumeMount{
-						{
-							Name:      "kaniko-secret",
-							MountPath: "/kaniko/.docker",
-						},
-					},
-				},
-			},
-			RestartPolicy: v1.RestartPolicyNever,
-			Volumes: []v1.Volume{
-				{
-					Name: "kaniko-secret",
-					VolumeSource: v1.VolumeSource{
-						Secret: &v1.SecretVolumeSource{
-							SecretName: "kaniko-secret", //TODO: take this from envar?
-							Items: []v1.KeyToPath{
-								{
-									Key:  ".dockerconfigjson",
-									Path: "config.json",
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-	}
+func NewPodController(client kubernetes.Interface, config *restclient.Config) *PodController {
+	return &PodController{client, config}
+}
 
-	pod, err := c.CoreV1().Pods(checkpointerNamespace).Create(context.TODO(), pod, metav1.CreateOptions{})
+func (pc *PodController) CreatePod(pod *v1.Pod, namespace string) (string, error) {
+	pod, err := pc.client.CoreV1().Pods(namespace).Create(context.TODO(), pod, metav1.CreateOptions{})
 	if err != nil {
 		return "", fmt.Errorf("failed to create pod: %w", err)
 	}
-
 	return pod.GetName(), nil
 }
 
-func DeleteKanikoPod(clientset *kubernetes.Clientset, podName string) error {
-	return DeletePod(clientset, checkpointerNamespace, podName)
-}
-
-func DeletePod(clientset *kubernetes.Clientset, namespace, podName string) error {
+func (pc *PodController) DeletePod(namespace, podName string) error {
 	log.Printf("deleting pod %s/%s", namespace, podName)
-	err := clientset.CoreV1().Pods(namespace).Delete(context.TODO(), podName, metav1.DeleteOptions{})
+	err := pc.client.CoreV1().Pods(namespace).Delete(context.TODO(), podName, metav1.DeleteOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to delete %s/%s pod: %w", namespace, podName, err)
 	}
 	return nil
 }
 
-func AttachToPod(clientset *kubernetes.Clientset, config *restclient.Config, podName, buildContextTar string) error {
-	req := clientset.CoreV1().RESTClient().Post().
+func (pc *PodController) AttachAndStreamToPod(podName, namespace, buildContextTar string) error {
+	req := pc.client.CoreV1().RESTClient().Post().
 		Resource("pods").
 		Name(podName).
-		Namespace(checkpointerNamespace).
+		Namespace(namespace).
 		SubResource("attach").
 		Param("container", "kaniko").
 		Param("stdin", "true").
@@ -97,7 +54,7 @@ func AttachToPod(clientset *kubernetes.Clientset, config *restclient.Config, pod
 
 	log.Printf("creating new executor with %s", req.URL())
 
-	executor, err := remotecommand.NewSPDYExecutor(config, "POST", req.URL())
+	executor, err := remotecommand.NewSPDYExecutor(pc.config, "POST", req.URL())
 	if err != nil {
 		return err
 	}
@@ -108,7 +65,7 @@ func AttachToPod(clientset *kubernetes.Clientset, config *restclient.Config, pod
 	}
 	defer buildContextFile.Close()
 
-	err = waitForPodRunning(clientset, podName, time.Second*30) // TODO: make timeout env var
+	err = pc.waitForPodRunning(podName, namespace, time.Second*30) // TODO: make timeout env var?
 	if err != nil {
 		return fmt.Errorf("timed out waiting for kaniko to start: %w", err)
 	}
@@ -121,14 +78,42 @@ func AttachToPod(clientset *kubernetes.Clientset, config *restclient.Config, pod
 		Tty:    false,
 	})
 
+	// TODO: check kaniko pod completed without fail
 	return err
 }
 
-func waitForPodRunning(c kubernetes.Interface, podName string, timeout time.Duration) error {
+// TODO: improve error handling
+func (pc *PodController) GetPodIPForNode(nodeName string) (string, error) {
+	pods, err := pc.client.CoreV1().Pods("").List(context.TODO(), metav1.ListOptions{
+		LabelSelector: "app.kubernetes.io/name=checkpointer",
+		FieldSelector: fmt.Sprintf("spec.nodeName=%s", nodeName),
+	})
+	if err != nil {
+		return "", fmt.Errorf("error listing pods on node %s: %s", nodeName, err)
+	}
+
+	for _, pod := range pods.Items {
+		if pod.Status.Phase == v1.PodRunning && pod.Status.PodIP != "" {
+			return pod.Status.PodIP, nil
+		}
+	}
+
+	return "", nil
+}
+
+func (pc *PodController) GetNodeOfPod(podName, namespace string) (string, error) {
+	pod, err := pc.client.CoreV1().Pods(namespace).Get(context.TODO(), podName, metav1.GetOptions{})
+	if err != nil {
+		return "", fmt.Errorf("error getting pod  %s/%s", podName, namespace)
+	}
+	return pod.Spec.NodeName, nil
+}
+
+func (pc *PodController) waitForPodRunning(podName, namespace string, timeout time.Duration) error {
 	isPodRunning := func(ctx context.Context) (bool, error) {
 		log.Printf("waiting for %s pod to be running...", podName)
 
-		pod, err := c.CoreV1().Pods(checkpointerNamespace).Get(ctx, podName, metav1.GetOptions{})
+		pod, err := pc.client.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}

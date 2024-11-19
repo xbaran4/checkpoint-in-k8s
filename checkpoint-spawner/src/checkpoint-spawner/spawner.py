@@ -1,16 +1,9 @@
+import asyncio
 import json
-import logging
-import sys
 
-import oauthlib
 from kubespawner import KubeSpawner
-from traitlets import Unicode, Bool
+from traitlets import Unicode
 from tornado.httpclient import AsyncHTTPClient, HTTPRequest
-
-oauthlib.set_debug(True)
-log = logging.getLogger('oauthlib')
-log.addHandler(logging.StreamHandler(sys.stdout))
-log.setLevel(logging.DEBUG)
 
 class CheckpointSpawner(KubeSpawner):
     checkpoint_service_name = Unicode(
@@ -24,6 +17,10 @@ class CheckpointSpawner(KubeSpawner):
     @property
     def will_resume(self):
         return True
+
+    # @property
+    # def slow_stop_timeout(self):
+    #     return 100
 
     def __init__(self, *args, **kwargs):
         self.log.info(f'__init__ called, with will_resume value: {self.will_resume}')
@@ -75,15 +72,15 @@ class CheckpointSpawner(KubeSpawner):
         self.log.info(f'oauth info: {self.api_token} and {self.oauth_client_id} and {self.old_api_token}')
 
         if self.checkpoint_image_name is not None:
-            cp_url = f'http://{self.checkpoint_service_name}/checkpoint'
-            self.log.info(f'calling checkpoint status to {cp_url}')
-            http_client = AsyncHTTPClient()
-            request = HTTPRequest(
-                url=cp_url + f"?containerPath={self.namespace}/{self.pod_name}/notebook&hang=true",
-                method="GET"
-            )
-
-            await http_client.fetch(request)
+            # cp_url = f'http://{self.checkpoint_service_name}/checkpoint'
+            # self.log.info(f'calling checkpoint status to {cp_url}')
+            # http_client = AsyncHTTPClient()
+            # request = HTTPRequest(
+            #     url=cp_url + f"?containerPath={self.namespace}/{self.pod_name}/notebook&hang=true",
+            #     method="GET"
+            # )
+            #
+            # await http_client.fetch(request)
             self.modify_pod_hook = self.modify_pod
 
         return await super().start()
@@ -91,7 +88,8 @@ class CheckpointSpawner(KubeSpawner):
     async def stop(self, now=False):
         container_image_name = f'pbaran555/kaniko-checkpointed:{self.user.name}'
         payload = dict(containerImageName=container_image_name,
-                       containerPath=f"{self.namespace}/{self.pod_name}/notebook")
+                       containerPath=f"{self.namespace}/{self.pod_name}/notebook",
+                       deletePod=True)
         cp_url = f'http://{self.checkpoint_service_name}/checkpoint'
 
         self.log.info(f'stop called; calling checkpoint to {cp_url}, with payload {payload}, with async client')
@@ -111,16 +109,15 @@ class CheckpointSpawner(KubeSpawner):
         response = None
         try:
             response = await http_client.fetch(request)
-            print("Response Code:", response.code)
-            print("Response Body:", response.body.decode('utf-8'))
+            self.log.info(f"Response Code: {response.code}")
+            self.log.info(f"Response Body: {response.body.decode('utf-8')}")
         except Exception as e:
-            print("Error:", e)
-
+            self.log.error(f"STOP Exception occurred: {e}")
         self.log.info(f'checkpoint called with status {response.code}')
 
         # await super().stop(now)
         self.checkpoint_image_name = container_image_name
-        self.log.info('stop done')
+        self.log.info('STOP DONE')
 
 
     @staticmethod
