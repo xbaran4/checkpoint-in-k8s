@@ -1,5 +1,7 @@
 package checkpointer
 
+import "context"
+
 type CheckpointRequest struct {
 	ContainerIdentifier ContainerIdentifier
 	ContainerImageName  string `json:"containerImageName"`
@@ -7,7 +9,7 @@ type CheckpointRequest struct {
 }
 
 type Checkpointer interface {
-	Checkpoint(cr CheckpointRequest) error
+	Checkpoint(ctx context.Context, cr CheckpointRequest) error
 }
 
 type ContainerIdentifier struct {

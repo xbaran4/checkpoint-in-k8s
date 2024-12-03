@@ -2,14 +2,17 @@ package checkpointer
 
 import (
 	"checkpoint-in-k8s/internal"
+	"context"
 	"fmt"
+	"github.com/rs/zerolog"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
-	"log"
 	"os"
 )
+
+const kanikoContainerName = "kaniko"
 
 type kanikoStdinCheckpointer struct {
 	*internal.PodController
@@ -20,36 +23,37 @@ func NewKanikoStdinCheckpointer(client kubernetes.Interface, config *restclient.
 	return &kanikoStdinCheckpointer{internal.NewPodController(client, config), checkpointerNamespace}
 }
 
-func (cp *kanikoStdinCheckpointer) Checkpoint(req CheckpointRequest) error {
-	log.Printf("creating kaniko pod")
-	kanikoPodName, err := cp.CreatePod(cp.getKanikoManifest(req.ContainerImageName), cp.checkpointerNamespace)
-	if err != nil {
-		return fmt.Errorf("could not create checkpointer container: %s with error %s", req.ContainerIdentifier, err)
-	}
-	defer cp.DeletePod(cp.checkpointerNamespace, kanikoPodName)
-	log.Printf("successfully created kaniko pod")
+func (cp *kanikoStdinCheckpointer) Checkpoint(ctx context.Context, cr CheckpointRequest) error {
+	lg := zerolog.Ctx(ctx)
 
-	log.Printf("calling Kubelet checkpointer")
-	checkpointTarName, err := internal.CallKubeletCheckpoint(req.ContainerIdentifier.String())
+	lg.Debug().Msg("creating kaniko pod")
+	kanikoPodName, err := cp.CreatePod(ctx, cp.getKanikoManifest(cr.ContainerImageName), cp.checkpointerNamespace)
 	if err != nil {
-		return fmt.Errorf("could not checkpointer container: %s with error %s", req.ContainerIdentifier, err)
+		return fmt.Errorf("could not create checkpointer container: %s with error %w", cr.ContainerIdentifier, err)
+	}
+	defer cp.DeletePod(context.WithoutCancel(ctx), cp.checkpointerNamespace, kanikoPodName)
+
+	lg.Debug().Msg("calling Kubelet checkpointer")
+	checkpointTarName, err := internal.CallKubeletCheckpoint(ctx, cr.ContainerIdentifier.String())
+	if err != nil {
+		return fmt.Errorf("could not checkpointer container: %s with error %w", cr.ContainerIdentifier, err)
 	}
 	defer os.Remove(checkpointTarName)
-	log.Printf("successfully created checkpointer tar: %s", checkpointTarName)
+	lg.Debug().Str("tarName", checkpointTarName).Msg("successfully created checkpointer tar")
 
-	if req.DeletePod {
-		if err := cp.DeletePod(req.ContainerIdentifier.Namespace, req.ContainerIdentifier.PodName); err != nil {
-			log.Printf("could not delete pod: %s with error %s", req.ContainerIdentifier, err) // TODO: fail on delete?
+	if cr.DeletePod {
+		if err := cp.DeletePod(ctx, cr.ContainerIdentifier.Namespace, cr.ContainerIdentifier.PodName); err != nil {
+			lg.Warn().Err(err).Msg("could not delete pod") // TODO: fail on delete?
 		}
-		log.Printf("successfully deleted pod %s/%s", req.ContainerIdentifier.Namespace, req.ContainerIdentifier.PodName)
+		lg.Debug().Msg("successfully deleted checkpointed Pod")
 	}
 
 	filledDockerfileTemplate, err := internal.DockerfileFromTemplate(checkpointTarName)
 	if err != nil {
-		return fmt.Errorf("could not create checkpointer container: %s with error %s", req.ContainerIdentifier, err)
+		return fmt.Errorf("could not create checkpointer container: %s with error %w", cr.ContainerIdentifier, err)
 	}
 	defer os.Remove(filledDockerfileTemplate)
-	log.Printf("successfully created new Dockerfile from template")
+	lg.Debug().Msg("successfully created new Dockerfile from template")
 
 	buildContextTar, err := internal.CreateTarGzTempFile(map[string]string{
 		filledDockerfileTemplate: "Dockerfile",
@@ -57,16 +61,16 @@ func (cp *kanikoStdinCheckpointer) Checkpoint(req CheckpointRequest) error {
 	})
 
 	if err != nil {
-		return fmt.Errorf("could not create checkpointer container: %s with error %s", req.ContainerIdentifier, err)
+		return fmt.Errorf("could not create checkpointer container: %s with error %w", cr.ContainerIdentifier, err)
 	}
 	defer os.Remove(buildContextTar)
-	log.Printf("successfully built tar.gz with buildcontext")
+	lg.Debug().Msg("successfully built tar.gz with build context")
 
-	if err = cp.AttachAndStreamToPod(kanikoPodName, cp.checkpointerNamespace, buildContextTar); err != nil {
-		return fmt.Errorf("failed to attach to pod: %v\n", err)
+	if err = cp.AttachAndStreamToPod(ctx, kanikoContainerName, kanikoPodName, cp.checkpointerNamespace, buildContextTar); err != nil {
+		return fmt.Errorf("failed to attach to pod: %w", err)
 	}
 
-	log.Printf("checkpointing done, about to cleanup resources")
+	lg.Debug().Msg("checkpointing done, about to cleanup resources")
 	return nil
 }
 
@@ -78,13 +82,12 @@ func (cp *kanikoStdinCheckpointer) getKanikoManifest(newContainerImageName strin
 		Spec: v1.PodSpec{
 			Containers: []v1.Container{
 				{
-					Name:  "kaniko",
-					Image: "gcr.io/kaniko-project/executor:debug",
+					Name:  kanikoContainerName,
+					Image: "gcr.io/kaniko-project/executor:latest",
 					Args: []string{
 						"--dockerfile=Dockerfile",
 						"--context=tar://stdin",
 						"--destination=" + newContainerImageName,
-						"--label=\"org.criu.checkpointer.container.name=value\"",
 					},
 					Stdin:     true,
 					StdinOnce: true,

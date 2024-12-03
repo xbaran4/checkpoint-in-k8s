@@ -12,15 +12,14 @@ docker push pbaran555/checkpointer
 
 ## Making a checkpoint request
 ```shell
-curl "http://localhost:3333/checkpoint" \
---request POST \
+curl "http://localhost:3333/checkpoint/default/timer-sleep/timer" \
 --header "Content-Type: application/json" \
---data '{"containerPath": "default/timer-sleep/timer", "containerImageName": "pbaran555/kaniko-checkpointed"}' \
+--data '{"containerImageName": "pbaran555/kaniko-checkpointed", "deletePod": "true"}' \
 --verbose
 ```
 
 ## Checking checkpoint state
 ```shell
-curl "http://localhost:3333/checkpoint?containerPath=default/timer-sleep/timer" \
+curl "http://localhost:3333/checkpoint/default/timer-sleep/timer" \
 --verbose
 ```

@@ -28,6 +28,7 @@ func DockerfileFromTemplate(checkpointTarName string) (string, error) {
 		return "", err
 	}
 
+	// TODO: make base image with both cri-o and containerd labels
 	err = templateFile.Execute(filledTemplate,
 		checkpointDockerfile{
 			os.Getenv("CHECKPOINT_BASE_IMAGE"),

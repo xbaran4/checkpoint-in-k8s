@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
@@ -25,16 +26,16 @@ func httpClient() (*http.Client, error) {
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
 				Certificates:       []tls.Certificate{cert},
-				InsecureSkipVerify: true, // TODO: handle self-singed certs
+				InsecureSkipVerify: os.Getenv("KUBELET_ALLOW_INSECURE") != "",
 			},
 		},
 	}, nil
 }
 
-func CallKubeletCheckpoint(containerPath string) (string, error) {
+func CallKubeletCheckpoint(ctx context.Context, containerPath string) (string, error) {
 	requestURL := fmt.Sprintf("https://localhost:%s/checkpoint/%s", os.Getenv("KUBELET_PORT"), containerPath)
 
-	req, err := http.NewRequest(http.MethodPost, requestURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL, nil)
 	if err != nil {
 		return "", fmt.Errorf("could not create request: %w", err)
 	}

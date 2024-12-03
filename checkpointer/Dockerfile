@@ -11,8 +11,8 @@ FROM --platform=linux/amd64 alpine:latest
 
 WORKDIR /checkpointer-app
 
-COPY --from=builder /checkpointer ./checkpointer
 COPY internal/templates/dockerfile.tmpl ./dockerfile.tmpl
+COPY --from=builder /checkpointer ./checkpointer
 RUN chmod u+x ./checkpointer
 
 ENV KUBELET_PORT="10250"

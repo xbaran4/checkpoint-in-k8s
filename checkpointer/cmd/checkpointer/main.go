@@ -3,9 +3,11 @@ package main
 import (
 	"checkpoint-in-k8s/web"
 	"errors"
+	"github.com/rs/zerolog"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
-	"log"
+
+	"github.com/rs/zerolog/log"
 	"net/http"
 	"os"
 )
@@ -30,22 +32,31 @@ func main() {
 		panic(err.Error())
 	}
 
-	// TODO: cumbersome design?
-	proxyLessHandler := web.NewCheckpointHandler(clientset, config, true, false)
-	var cpHandler handler = proxyLessHandler
-	if os.Getenv("PROXY_FORWARD") != "" {
-		cpHandler = web.NewProxyCheckpointHandler(clientset, config, proxyLessHandler, os.Getenv("NODE_NAME"))
+	// set plaintext logs for better dev experience
+	if os.Getenv("ENVIRONMENT") != "prod" {
+		log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stdout})
 	}
 
-	http.HandleFunc("POST /checkpoint/{ns}/{pod}/{container}", cpHandler.HandleCheckpoint)
-	http.HandleFunc("GET /checkpoint/{ns}/{pod}/{container}", cpHandler.HandleCheckState)
+	mux := http.NewServeMux()
+	ch := web.NewCheckpointHandler(clientset, config, true, false)
+	var checkpointHandle http.Handler = http.HandlerFunc(ch.HandleCheckpoint)
+	var stateHandle http.Handler = http.HandlerFunc(ch.HandleCheckState)
 
-	log.Println("starting http server")
-	err = http.ListenAndServe(":3333", nil)
+	if os.Getenv("DISABLE_ROUTE_FORWARD") == "" {
+		proxy := web.NewProxyCheckpointHandler(clientset, config, os.Getenv("NODE_NAME"))
+		checkpointHandle = proxy.RouteProxyMiddleware(checkpointHandle)
+		stateHandle = proxy.RouteProxyMiddleware(stateHandle)
+	}
+
+	mux.Handle("POST /checkpoint/{ns}/{pod}/{container}", checkpointHandle)
+	mux.Handle("GET /checkpoint/{ns}/{pod}/{container}", stateHandle)
+
+	log.Info().Msg("starting http server on port 3333")
+	err = http.ListenAndServe(":3333", mux)
 
 	if errors.Is(err, http.ErrServerClosed) {
-		log.Println("server closed")
+		log.Info().Msg("server closed")
 	} else {
-		log.Fatalf("error starting server: %s\n", err)
+		log.Error().Err(err).Msg("error starting server")
 	}
 }

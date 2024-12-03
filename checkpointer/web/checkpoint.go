@@ -2,12 +2,13 @@ package web
 
 import (
 	"checkpoint-in-k8s/pkg/checkpointer"
+	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/rs/zerolog/log"
 	"io"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
-	"log"
 	"net/http"
 	"os"
 	"sync"
@@ -59,7 +60,7 @@ func (ch *CheckpointHandler) HandleCheckpoint(rw http.ResponseWriter, req *http.
 
 	var checkpointRequest checkpointer.CheckpointRequest
 	if err := json.Unmarshal(body, &checkpointRequest); err != nil {
-		http.Error(rw, "Invalid JSON format", http.StatusBadRequest)
+		http.Error(rw, fmt.Sprintf("Invalid JSON format: %s", err), http.StatusBadRequest)
 		return
 	}
 
@@ -69,36 +70,38 @@ func (ch *CheckpointHandler) HandleCheckpoint(rw http.ResponseWriter, req *http.
 		return
 	}
 	checkpointRequest.ContainerIdentifier = *containerIdentifier
+	lg := log.With().Str("containerIdentifier", containerIdentifier.String()).Logger()
 
-	log.Printf("req to checkpointer '%s' as '%s'", checkpointRequest.ContainerIdentifier, checkpointRequest.ContainerImageName)
-	ch.doCheckpoint(rw, checkpointRequest)
+	lg.Info().Str("imageName", checkpointRequest.ContainerImageName).Msg("request to checkpoint container")
+
+	if ch.async {
+		ch.doCheckpointAsync(checkpointRequest)
+		rw.WriteHeader(http.StatusOK)
+		return
+	}
+
+	err = ch.Checkpoint(lg.WithContext(req.Context()), checkpointRequest)
+	if err != nil {
+		lg.Error().Err(err).Msg("checkpointer failed")
+		http.Error(rw, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	lg.Info().Msg("checkpointer done")
+	rw.WriteHeader(http.StatusOK)
 }
 
-func (ch *CheckpointHandler) doCheckpoint(writer http.ResponseWriter, checkpointRequest checkpointer.CheckpointRequest) {
-	if ch.async {
-		errChan := make(chan error)
-		c.Put(checkpointRequest.ContainerIdentifier.String(), errChan)
-		go func() {
-			err := ch.Checkpoint(checkpointRequest)
-			if err != nil {
-				log.Printf("checkpointer failed: %s", err)
-				errChan <- err
-			}
-			log.Printf("checkpointer done, closing channel")
-			close(errChan)
-		}()
-		writer.WriteHeader(http.StatusOK)
-		return
-	}
-
-	err := ch.Checkpoint(checkpointRequest)
-	if err != nil {
-		log.Printf("checkpointer failed: %s", err)
-		writer.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-	log.Printf("checkpointer done")
-	writer.WriteHeader(http.StatusOK)
+func (ch *CheckpointHandler) doCheckpointAsync(checkpointRequest checkpointer.CheckpointRequest) {
+	errChan := make(chan error)
+	c.Put(checkpointRequest.ContainerIdentifier.String(), errChan)
+	go func() {
+		err := ch.Checkpoint(context.Background(), checkpointRequest)
+		if err != nil {
+			log.Error().Err(err).Msg("checkpointer failed")
+			errChan <- err
+		}
+		log.Debug().Msg("checkpointer done, closing channel")
+		close(errChan)
+	}()
 }
 
 func (ch *CheckpointHandler) HandleCheckState(rw http.ResponseWriter, req *http.Request) {
@@ -107,10 +110,13 @@ func (ch *CheckpointHandler) HandleCheckState(rw http.ResponseWriter, req *http.
 		http.Error(rw, "container path in format /{namespace}{pod}/{container} expected", http.StatusBadRequest)
 		return
 	}
-	log.Printf("req to check status of '%s'", containerIdentifier)
-	shouldHang := req.URL.Query().Get("hang") != ""
-	errChan := c.Get(containerIdentifier.String())
+	lg := log.With().Str("containerIdentifier", containerIdentifier.String()).Logger()
 
+	shouldHang := req.URL.Query().Get("hang") != ""
+
+	lg.Info().Bool("shouldHang", shouldHang).Msg("received request to check status of checkpointing")
+
+	errChan := c.Get(containerIdentifier.String())
 	if errChan == nil {
 		rw.WriteHeader(http.StatusNotFound)
 		return
@@ -127,18 +133,18 @@ func (ch *CheckpointHandler) HandleCheckState(rw http.ResponseWriter, req *http.
 
 	select {
 	case err := <-errChan:
-		log.Printf("checkpointer is already done")
+		lg.Debug().Msg("checkpointer is already done")
 		handleErr(rw, err)
 		return
 	default:
 		if shouldHang {
-			log.Printf("waiting for checkpointer to finish")
+			lg.Debug().Msg("waiting for checkpointer to finish")
 			err := <-errChan
 			handleErr(rw, err)
 			return
 		}
 	}
-	log.Printf("checkpointing still in progress")
+	lg.Debug().Msg("checkpointing still in progress")
 	rw.WriteHeader(http.StatusNoContent)
 }
 

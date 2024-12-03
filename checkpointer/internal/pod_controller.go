@@ -3,7 +3,9 @@ package internal
 import (
 	"context"
 	"fmt"
+	"github.com/rs/zerolog"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
@@ -23,36 +25,41 @@ func NewPodController(client kubernetes.Interface, config *restclient.Config) *P
 	return &PodController{client, config}
 }
 
-func (pc *PodController) CreatePod(pod *v1.Pod, namespace string) (string, error) {
-	pod, err := pc.client.CoreV1().Pods(namespace).Create(context.TODO(), pod, metav1.CreateOptions{})
+func (pc *PodController) CreatePod(ctx context.Context, pod *v1.Pod, namespace string) (string, error) {
+	pod, err := pc.client.CoreV1().Pods(namespace).Create(ctx, pod, metav1.CreateOptions{})
 	if err != nil {
 		return "", fmt.Errorf("failed to create pod: %w", err)
 	}
 	return pod.GetName(), nil
 }
 
-func (pc *PodController) DeletePod(namespace, podName string) error {
+func (pc *PodController) DeletePod(ctx context.Context, namespace, podName string) error {
 	log.Printf("deleting pod %s/%s", namespace, podName)
-	err := pc.client.CoreV1().Pods(namespace).Delete(context.TODO(), podName, metav1.DeleteOptions{})
+	err := pc.client.CoreV1().Pods(namespace).Delete(ctx, podName, metav1.DeleteOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to delete %s/%s pod: %w", namespace, podName, err)
 	}
 	return nil
 }
 
-func (pc *PodController) AttachAndStreamToPod(podName, namespace, buildContextTar string) error {
+func (pc *PodController) AttachAndStreamToPod(ctx context.Context, container, podName, namespace, buildContextTar string) error {
+	lg := zerolog.Ctx(ctx).With().
+		Str("namespace", namespace).
+		Str("pod", podName).
+		Str("container", container).Logger()
+
 	req := pc.client.CoreV1().RESTClient().Post().
 		Resource("pods").
 		Name(podName).
 		Namespace(namespace).
 		SubResource("attach").
-		Param("container", "kaniko").
+		Param("container", container).
 		Param("stdin", "true").
 		Param("stdout", "true").
 		Param("stderr", "true").
 		Param("tty", "false")
 
-	log.Printf("creating new executor with %s", req.URL())
+	lg.Debug().Msg("creating new executor")
 
 	executor, err := remotecommand.NewSPDYExecutor(pc.config, "POST", req.URL())
 	if err != nil {
@@ -65,31 +72,36 @@ func (pc *PodController) AttachAndStreamToPod(podName, namespace, buildContextTa
 	}
 	defer buildContextFile.Close()
 
-	err = pc.waitForPodRunning(podName, namespace, time.Second*30) // TODO: make timeout env var?
+	err = pc.WaitForPodRunning(ctx, podName, namespace, time.Second*30) // TODO: make timeout env var?
 	if err != nil {
-		return fmt.Errorf("timed out waiting for kaniko to start: %w", err)
+		return fmt.Errorf("timed out waiting for pod to start: %w", err)
 	}
-	log.Printf("about to stream to kaniko stdin...")
+	lg.Info().Msg("about to stream to container stdin...")
 
-	err = executor.StreamWithContext(context.TODO(), remotecommand.StreamOptions{
+	err = executor.StreamWithContext(ctx, remotecommand.StreamOptions{
 		Stdin:  buildContextFile,
 		Stdout: os.Stdout,
 		Stderr: os.Stderr,
 		Tty:    false,
 	})
+	if err != nil {
+		return fmt.Errorf("failed to stream to container stdin: %w", err)
+	}
 
-	// TODO: check kaniko pod completed without fail
-	return err
+	err = pc.WaitForPodSucceeded(ctx, podName, namespace, time.Second*30) // TODO: make timeout env var?
+	if err != nil {
+		return fmt.Errorf("timed out waiting for pod to complete: %w", err)
+	}
+	return nil
 }
 
-// TODO: improve error handling
-func (pc *PodController) GetPodIPForNode(nodeName string) (string, error) {
-	pods, err := pc.client.CoreV1().Pods("").List(context.TODO(), metav1.ListOptions{
+func (pc *PodController) GetPodIPForNode(ctx context.Context, nodeName string) (string, error) {
+	pods, err := pc.client.CoreV1().Pods("").List(ctx, metav1.ListOptions{
 		LabelSelector: "app.kubernetes.io/name=checkpointer",
 		FieldSelector: fmt.Sprintf("spec.nodeName=%s", nodeName),
 	})
 	if err != nil {
-		return "", fmt.Errorf("error listing pods on node %s: %s", nodeName, err)
+		return "", fmt.Errorf("error listing pods on node %s: %w", nodeName, err)
 	}
 
 	for _, pod := range pods.Items {
@@ -101,31 +113,42 @@ func (pc *PodController) GetPodIPForNode(nodeName string) (string, error) {
 	return "", nil
 }
 
-func (pc *PodController) GetNodeOfPod(podName, namespace string) (string, error) {
-	pod, err := pc.client.CoreV1().Pods(namespace).Get(context.TODO(), podName, metav1.GetOptions{})
+func (pc *PodController) GetNodeOfPod(ctx context.Context, podName, namespace string) (string, error) {
+	pod, err := pc.client.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
 	if err != nil {
-		return "", fmt.Errorf("error getting pod  %s/%s", podName, namespace)
+		if errors.IsNotFound(err) {
+			return pod.Spec.NodeName, nil
+		}
+		return "", fmt.Errorf("error getting pod %s/%s: %w", podName, namespace, err)
 	}
 	return pod.Spec.NodeName, nil
 }
 
-func (pc *PodController) waitForPodRunning(podName, namespace string, timeout time.Duration) error {
-	isPodRunning := func(ctx context.Context) (bool, error) {
-		log.Printf("waiting for %s pod to be running...", podName)
+func (pc *PodController) WaitForPodRunning(ctx context.Context, podName, namespace string, timeout time.Duration) error {
+	return pc.waitForPodPhase(ctx, podName, namespace, timeout, v1.PodRunning, v1.PodFailed, v1.PodSucceeded)
+}
 
+func (pc *PodController) WaitForPodSucceeded(ctx context.Context, podName, namespace string, timeout time.Duration) error {
+	return pc.waitForPodPhase(ctx, podName, namespace, timeout, v1.PodSucceeded, v1.PodFailed)
+}
+
+func (pc *PodController) waitForPodPhase(
+	ctx context.Context, podName, namespace string, timeout time.Duration,
+	targetPhase v1.PodPhase, failurePhases ...v1.PodPhase) error {
+	checkPodPhase := func(ctx context.Context) (bool, error) {
+		zerolog.Ctx(ctx).Debug().Str("namespace", namespace).Str("podName", podName).Msg("polling for Pod phase...")
 		pod, err := pc.client.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}
 
-		switch pod.Status.Phase {
-		case v1.PodRunning:
-			return true, nil
-		case v1.PodFailed, v1.PodSucceeded:
-			return false, fmt.Errorf("pod failed or completed")
+		for _, phase := range failurePhases {
+			if pod.Status.Phase == phase {
+				return false, fmt.Errorf("pod reached unexpected phase: %s", phase)
+			}
 		}
-		return false, nil
+		return pod.Status.Phase == targetPhase, nil
 	}
 
-	return wait.PollUntilContextTimeout(context.TODO(), time.Second, timeout, true, isPodRunning)
+	return wait.PollUntilContextTimeout(ctx, time.Second, timeout, true, checkPodPhase)
 }

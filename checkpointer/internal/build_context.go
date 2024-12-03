@@ -7,9 +7,10 @@ import (
 	"path/filepath"
 )
 
+const parentBuildContextDir = "/tmp/build-contexts"
+
 func PrepareDir(checkpointTarFilepath, dockerfileFilepath string) (string, error) {
-	parentDir := "/tmp/build-contexts"
-	tempDir, err := os.MkdirTemp(parentDir, "context-")
+	tempDir, err := os.MkdirTemp(parentBuildContextDir, "context-")
 	if err != nil {
 		fmt.Println("Error creating temporary directory:", err)
 		return "", err
