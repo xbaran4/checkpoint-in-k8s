@@ -11,7 +11,7 @@ spec:
       protocol: TCP
       port: 80
       targetPort: 3333
-  # TODO: Since checkpointers will run on each node, when a request to checkpointer container A comes to this service,
+  # Since checkpointers will run on each node, when a request to checkpointer container A comes to this service,
   # it needs to be forwarded to the specific Node (kubelet on the Node) that runs the container A.
   # Optionally it could broadcast the request to all nodes, and the request would succeed only on the Node running A.
   # This however would require logic outside of the k8s Service resource.
