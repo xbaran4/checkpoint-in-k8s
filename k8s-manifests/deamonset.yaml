@@ -30,8 +30,6 @@ spec:
                 fieldRef:
                   fieldPath: metadata.namespace
           envFrom:
-            - secretRef:
-                name: container-registry-credentials
             - configMapRef:
                 name: checkpointer-cm
           resources:

@@ -21,9 +21,6 @@ ENV KUBELET_CERT_KEY="/etc/kubernetes/pki/apiserver-kubelet-client.key"
 
 ENV CHECKPOINT_BASE_IMAGE="pbaran555/checkpoint-base"
 
-ENV REGISTRY_USERNAME="user"
-ENV REGISTRY_PASSWORD="pass"
-
 EXPOSE 3333
 
 ENTRYPOINT ["./checkpointer"]
