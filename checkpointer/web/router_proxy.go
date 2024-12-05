@@ -12,14 +12,14 @@ import (
 )
 
 type ProxyCheckpointHandler struct {
-	podController *internal.PodController
-	myNodeName    string
+	podController    *internal.PodController
+	checkpointerNode string
 }
 
-func NewProxyCheckpointHandler(client *kubernetes.Clientset, config *rest.Config, myNodeName string) *ProxyCheckpointHandler {
+func NewProxyCheckpointHandler(client *kubernetes.Clientset, config *rest.Config, checkpointerNode string) *ProxyCheckpointHandler {
 	return &ProxyCheckpointHandler{
-		podController: internal.NewPodController(client, config),
-		myNodeName:    myNodeName,
+		podController:    internal.NewPodController(client, config),
+		checkpointerNode: checkpointerNode,
 	}
 }
 
@@ -50,7 +50,7 @@ func (proxy *ProxyCheckpointHandler) RouteProxyMiddleware(next http.Handler) htt
 
 		lg.Debug().Str("Node", podsNodeName).Msg("found Node of the Pod")
 
-		if proxy.myNodeName == podsNodeName {
+		if proxy.checkpointerNode == podsNodeName {
 			log.Info().Msg("using local handler")
 			next.ServeHTTP(rw, req)
 			return
