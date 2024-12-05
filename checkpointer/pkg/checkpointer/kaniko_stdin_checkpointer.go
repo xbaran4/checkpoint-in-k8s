@@ -34,26 +34,26 @@ func newKanikoStdinCheckpointer(client kubernetes.Interface,
 	}
 }
 
-func (cp *kanikoStdinCheckpointer) Checkpoint(ctx context.Context, cr CheckpointRequest) error {
+func (cp *kanikoStdinCheckpointer) Checkpoint(ctx context.Context, params CheckpointParams) error {
 	lg := zerolog.Ctx(ctx)
 
 	lg.Debug().Msg("creating kaniko pod")
-	kanikoPodName, err := cp.CreatePod(ctx, cp.getKanikoManifest(cr.CheckpointIdentifier), cp.checkpointerNamespace)
+	kanikoPodName, err := cp.CreatePod(ctx, cp.getKanikoManifest(params.CheckpointIdentifier), cp.checkpointerNamespace)
 	if err != nil {
-		return fmt.Errorf("could not create checkpointer container: %s with error %w", cr.ContainerIdentifier, err)
+		return fmt.Errorf("could not create checkpointer container: %s with error %w", params.ContainerIdentifier, err)
 	}
 	defer cp.DeletePod(context.WithoutCancel(ctx), cp.checkpointerNamespace, kanikoPodName)
 
 	lg.Debug().Msg("calling Kubelet checkpointer")
-	checkpointTarName, err := internal.CallKubeletCheckpoint(ctx, cr.ContainerIdentifier.String())
+	checkpointTarName, err := internal.CallKubeletCheckpoint(ctx, params.ContainerIdentifier.String())
 	if err != nil {
-		return fmt.Errorf("could not checkpointer container: %s with error %w", cr.ContainerIdentifier, err)
+		return fmt.Errorf("could not checkpointer container: %s with error %w", params.ContainerIdentifier, err)
 	}
 	defer os.Remove(checkpointTarName)
 	lg.Debug().Str("tarName", checkpointTarName).Msg("successfully created checkpointer tar")
 
-	if cr.DeletePod {
-		if err := cp.DeletePod(ctx, cr.ContainerIdentifier.Namespace, cr.ContainerIdentifier.PodName); err != nil {
+	if params.DeletePod {
+		if err := cp.DeletePod(ctx, params.ContainerIdentifier.Namespace, params.ContainerIdentifier.PodName); err != nil {
 			lg.Warn().Err(err).Msg("could not delete pod") // TODO: fail on delete?
 		}
 		lg.Debug().Msg("successfully deleted checkpointed Pod")
@@ -61,7 +61,7 @@ func (cp *kanikoStdinCheckpointer) Checkpoint(ctx context.Context, cr Checkpoint
 
 	filledDockerfileTemplate, err := internal.DockerfileFromTemplate(checkpointTarName)
 	if err != nil {
-		return fmt.Errorf("could not create checkpointer container: %s with error %w", cr.ContainerIdentifier, err)
+		return fmt.Errorf("could not create checkpointer container: %s with error %w", params.ContainerIdentifier, err)
 	}
 	defer os.Remove(filledDockerfileTemplate)
 	lg.Debug().Msg("successfully created new Dockerfile from template")
@@ -72,7 +72,7 @@ func (cp *kanikoStdinCheckpointer) Checkpoint(ctx context.Context, cr Checkpoint
 	})
 
 	if err != nil {
-		return fmt.Errorf("could not create checkpointer container: %s with error %w", cr.ContainerIdentifier, err)
+		return fmt.Errorf("could not create checkpointer container: %s with error %w", params.ContainerIdentifier, err)
 	}
 	defer os.Remove(buildContextTar)
 	lg.Debug().Msg("successfully built tar.gz with build context")

@@ -7,15 +7,14 @@ import (
 	"k8s.io/client-go/rest"
 )
 
-type CheckpointRequest struct {
+type CheckpointParams struct {
 	ContainerIdentifier  ContainerIdentifier
-	DeletePod            bool   `json:"deletePod"`
-	CheckpointIdentifier string `json:"checkpointIdentifier"`
-	Async                bool   `json:"async"`
+	DeletePod            bool
+	CheckpointIdentifier string
 }
 
 type Checkpointer interface {
-	Checkpoint(ctx context.Context, cr CheckpointRequest) error
+	Checkpoint(ctx context.Context, params CheckpointParams) error
 }
 
 func NewCheckpointer(client *kubernetes.Clientset, config *rest.Config, checkpointerConfig config.CheckpointerConfig) Checkpointer {
