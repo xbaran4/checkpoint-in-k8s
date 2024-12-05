@@ -16,7 +16,7 @@ type ProxyCheckpointHandler struct {
 	checkpointerNode string
 }
 
-func NewProxyCheckpointHandler(client *kubernetes.Clientset, config *rest.Config, checkpointerNode string) *ProxyCheckpointHandler {
+func NewRouteProxyMiddleware(client *kubernetes.Clientset, config *rest.Config, checkpointerNode string) *ProxyCheckpointHandler {
 	return &ProxyCheckpointHandler{
 		podController:    internal.NewPodController(client, config),
 		checkpointerNode: checkpointerNode,

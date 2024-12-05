@@ -1,6 +1,7 @@
 package main
 
 import (
+	"checkpoint-in-k8s/pkg/config"
 	"checkpoint-in-k8s/web"
 	"errors"
 	"github.com/rs/zerolog"
@@ -12,44 +13,43 @@ import (
 	"os"
 )
 
-var clientset *kubernetes.Clientset
-var config *rest.Config
-
-type handler interface {
-	HandleCheckpoint(http.ResponseWriter, *http.Request)
-	HandleCheckState(http.ResponseWriter, *http.Request)
-}
-
 func main() {
-	var err error
-	config, err = rest.InClusterConfig()
+	inClusterConfig, err := rest.InClusterConfig()
 	if err != nil {
-		panic(err.Error())
+		log.Fatal().Err(err).Msg("failed to get Kubernetes in-cluster inClusterConfig")
 	}
 
-	clientset, err = kubernetes.NewForConfig(config)
+	clientset, err := kubernetes.NewForConfig(inClusterConfig)
 	if err != nil {
-		panic(err.Error())
+		log.Fatal().Err(err).Msg("failed to get Kubernetes clientset")
+	}
+
+	checkpointerConfig, err := config.LoadCheckpointerConfig()
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to bootstrap Checkpointer configuration")
 	}
 
 	// set plaintext logs for better dev experience
-	if os.Getenv("ENVIRONMENT") != "prod" {
+	if checkpointerConfig.Environment == config.DevelopmentEnvironment {
+		zerolog.SetGlobalLevel(zerolog.DebugLevel)
 		log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stdout})
+	} else {
+		zerolog.SetGlobalLevel(zerolog.InfoLevel)
 	}
 
 	mux := http.NewServeMux()
-	ch := web.NewCheckpointHandler(clientset, config, true, false)
-	var checkpointHandle http.Handler = http.HandlerFunc(ch.HandleCheckpoint)
-	var stateHandle http.Handler = http.HandlerFunc(ch.HandleCheckState)
+	ch := web.NewCheckpointHandler(clientset, inClusterConfig, checkpointerConfig)
+	var checkpointHandler http.Handler = http.HandlerFunc(ch.HandleCheckpoint)
+	var stateHandler http.Handler = http.HandlerFunc(ch.HandleCheckState)
 
-	if os.Getenv("DISABLE_ROUTE_FORWARD") == "" {
-		proxy := web.NewProxyCheckpointHandler(clientset, config, os.Getenv("NODE_NAME"))
-		checkpointHandle = proxy.RouteProxyMiddleware(checkpointHandle)
-		stateHandle = proxy.RouteProxyMiddleware(stateHandle)
+	if !checkpointerConfig.DisableRouteForward {
+		proxy := web.NewRouteProxyMiddleware(clientset, inClusterConfig, checkpointerConfig.CheckpointerNode)
+		checkpointHandler = proxy.RouteProxyMiddleware(checkpointHandler)
+		stateHandler = proxy.RouteProxyMiddleware(stateHandler)
 	}
 
-	mux.Handle("POST /checkpoint/{ns}/{pod}/{container}", checkpointHandle)
-	mux.Handle("GET /checkpoint/{ns}/{pod}/{container}", stateHandle)
+	mux.Handle("POST /checkpoint/{ns}/{pod}/{container}", checkpointHandler)
+	mux.Handle("GET /checkpoint/{ns}/{pod}/{container}", stateHandler)
 
 	log.Info().Msg("starting http server on port 3333")
 	err = http.ListenAndServe(":3333", mux)

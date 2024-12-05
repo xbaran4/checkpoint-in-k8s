@@ -15,11 +15,25 @@ import (
 
 type kanikoFSCheckpointer struct {
 	*internal.PodController
+	kanikoSecretName      string
 	checkpointerNamespace string
+	checkpointerNode      string
+	checkpointImageBase   string
 }
 
-func NewKanikoFSCheckpointer(client kubernetes.Interface, config *restclient.Config, checkpointerNamespace string) Checkpointer {
-	return &kanikoFSCheckpointer{internal.NewPodController(client, config), checkpointerNamespace}
+func newKanikoFSCheckpointer(client kubernetes.Interface,
+	config *restclient.Config,
+	kanikoSecretName,
+	checkpointerNamespace,
+	checkpointerNode,
+	checkpointImageBase string) Checkpointer {
+	return &kanikoFSCheckpointer{
+		internal.NewPodController(client, config),
+		kanikoSecretName,
+		checkpointerNamespace,
+		checkpointerNode,
+		checkpointImageBase,
+	}
 }
 
 // Checkpoint Currently unused
@@ -54,7 +68,7 @@ func (cp *kanikoFSCheckpointer) Checkpoint(ctx context.Context, cr CheckpointReq
 		return fmt.Errorf("could not create checkpointer container: %s with error %w", cr.ContainerIdentifier, err)
 	}
 
-	kanikoPodName, err := cp.CreatePod(ctx, cp.getKanikoManifest(cr.ContainerImageName, tmpDir), cp.checkpointerNamespace)
+	kanikoPodName, err := cp.CreatePod(ctx, cp.getKanikoManifest(cr.CheckpointIdentifier, tmpDir), cp.checkpointerNamespace)
 	if err != nil {
 		return fmt.Errorf("could not create checkpointer container: %s with error %w", cr.ContainerIdentifier, err)
 	}
@@ -69,13 +83,14 @@ func (cp *kanikoFSCheckpointer) Checkpoint(ctx context.Context, cr CheckpointReq
 	return nil
 }
 
-func (cp *kanikoFSCheckpointer) getKanikoManifest(newContainerImageName, buildContextPath string) *v1.Pod {
+func (cp *kanikoFSCheckpointer) getKanikoManifest(imageTag, buildContextPath string) *v1.Pod {
 	hostPathType := v1.HostPathDirectory
 	pod := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: "kaniko-",
 		},
 		Spec: v1.PodSpec{
+			NodeName: cp.checkpointerNode,
 			Containers: []v1.Container{
 				{
 					Name:  "kaniko",
@@ -83,7 +98,7 @@ func (cp *kanikoFSCheckpointer) getKanikoManifest(newContainerImageName, buildCo
 					Args: []string{
 						"--dockerfile=/kaniko-build-context/Dockerfile",
 						"--context=dir:///kaniko-build-context",
-						"--destination=" + newContainerImageName,
+						"--destination=" + cp.checkpointImageBase + ":" + imageTag,
 					},
 					Stdin:     true,
 					StdinOnce: true,
@@ -105,7 +120,7 @@ func (cp *kanikoFSCheckpointer) getKanikoManifest(newContainerImageName, buildCo
 					Name: "kaniko-secret",
 					VolumeSource: v1.VolumeSource{
 						Secret: &v1.SecretVolumeSource{
-							SecretName: "kaniko-secret",
+							SecretName: cp.kanikoSecretName,
 							Items: []v1.KeyToPath{
 								{
 									Key:  ".dockerconfigjson",
