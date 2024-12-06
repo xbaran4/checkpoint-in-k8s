@@ -44,8 +44,9 @@ spec:
               mountPath: /var/lib/kubelet/checkpoints
             - name: build-contexts-dir
               mountPath: /tmp/build-contexts
-            - name: cert-dir
-              mountPath: /etc/kubernetes/pki
+            - name: kubelet-tls-secret
+              mountPath: /etc/kubernetes/tls
+              readOnly: true
       volumes:
         - name: checkpoints-tar-dir
           hostPath:
@@ -54,6 +55,6 @@ spec:
           hostPath:
             type: DirectoryOrCreate
             path: /tmp/build-contexts
-        - name: cert-dir
-          hostPath:
-            path: /etc/kubernetes/pki
+        - name: kubelet-tls-secret
+          secret:
+            secretName: kubelet-tls-secret
