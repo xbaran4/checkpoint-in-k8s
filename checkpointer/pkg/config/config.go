@@ -20,11 +20,14 @@ type CheckpointerConfig struct {
 	CheckpointerNode      string
 	CheckpointImagePrefix string
 	CheckpointBaseImage   string
-	CheckpointerPort      int64
-	KubeletPort           int64
-	KanikoTimoutSeconds   int64
+	KubeletCertFile       string
+	KubeletKeyFile        string
 	KanikoSecretName      string
 	StorageBasePath       string
+	KubeletBaseUrl        string
+	CheckpointerPort      int64
+	KanikoTimoutSeconds   int64
+	KubeletAllowInsecure  bool
 	DisableRouteForward   bool
 	UseKanikoFS           bool
 	Environment           Environment
@@ -54,28 +57,30 @@ func LoadCheckpointerConfig() (CheckpointerConfig, error) {
 	}
 
 	config.CheckpointerPort = getOrDefaultNonNegativeNumber("CHECKPOINTER_PORT", 3333)
-	config.KubeletPort = getOrDefaultNonNegativeNumber("KUBELET_PORT", 10250)
 	config.KanikoTimoutSeconds = getOrDefaultNonNegativeNumber("KANIKO_TIMEOUT", 30)
 
 	config.CheckpointBaseImage = getOrDefault("CHECKPOINT_BASE_IMAGE", "pbaran555/checkpoint-base")
 	config.KanikoSecretName = getOrDefault("KANIKO_SECRET_NAME", "kaniko-secret")
 	config.StorageBasePath = getOrDefault("STORAGE_BASE_PATH", "/tmp/checkpointer")
+	config.KubeletCertFile = getOrDefault("KUBELET_CERT_FILE", "/etc/kubernetes/pki/apiserver-kubelet-client.crt")
+	config.KubeletKeyFile = getOrDefault("KUBELET_KEY_FILE", "/etc/kubernetes/pki/apiserver-kubelet-client.key")
+	config.KubeletBaseUrl = getOrDefault("KUBELET_BASE_URL", "https://localhost:10250")
+
+	if config.KubeletAllowInsecure = os.Getenv("KUBELET_ALLOW_INSECURE") == "true"; config.KubeletAllowInsecure {
+		log.Warn().Msg("KUBELET_ALLOW_INSECURE enabled, Checkpointer will not verify kubelet certificate")
+	}
+	if config.DisableRouteForward = os.Getenv("DISABLE_ROUTE_FORWARD") == "true"; config.DisableRouteForward {
+		log.Info().Msg("DISABLE_ROUTE_FORWARD enabled, this should only be set in single-node cluster")
+	}
+	if config.UseKanikoFS = os.Getenv("USE_KANIKO_FS") == "true"; config.UseKanikoFS {
+		log.Info().Msg("USE_KANIKO_FS enabled, make sure Checkpointer has appropriate volume mounts")
+	}
 
 	if os.Getenv("ENVIRONMENT") == "prod" {
 		config.Environment = ProductionEnvironment
 	} else {
 		config.Environment = DevelopmentEnvironment
 		log.Info().Msg("assuming development environment")
-	}
-
-	config.DisableRouteForward = os.Getenv("DISABLE_ROUTE_FORWARD") == "true"
-	if config.DisableRouteForward {
-		log.Info().Msg("DISABLE_ROUTE_FORWARD enabled, this should only be set in single-node cluster")
-	}
-
-	config.UseKanikoFS = os.Getenv("USE_KANIKO_FS") == "true"
-	if config.UseKanikoFS {
-		log.Info().Msg("USE_KANIKO_FS enabled, make sure Checkpointer has appropriate volume mounts")
 	}
 
 	return config, nil

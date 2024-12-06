@@ -42,7 +42,10 @@ func main() {
 
 	mux := http.NewServeMux()
 
-	cp := checkpoint.NewCheckpointer(clientset, inClusterConfig, checkpointerConfig)
+	cp, err := checkpoint.NewCheckpointer(clientset, inClusterConfig, checkpointerConfig)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to create Checkpointer")
+	}
 	storage := manager.NewCheckpointStorage(checkpointerConfig)
 	mgr := manager.NewCheckpointManager(cp, storage)
 

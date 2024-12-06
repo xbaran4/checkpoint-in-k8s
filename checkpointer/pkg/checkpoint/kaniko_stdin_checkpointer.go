@@ -7,8 +7,6 @@ import (
 	"github.com/rs/zerolog"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
-	restclient "k8s.io/client-go/rest"
 	"os"
 )
 
@@ -16,23 +14,22 @@ const kanikoContainerName = "kaniko"
 
 type kanikoStdinCheckpointer struct {
 	*internal.PodController
-	kubeletPort           int64
+	kubeletController     internal.KubeletController
 	kanikoSecretName      string
 	checkpointerNamespace string
 	checkpointImagePrefix string
 	checkpointImageBase   string
 }
 
-func newKanikoStdinCheckpointer(client kubernetes.Interface,
-	config *restclient.Config,
-	kubeletPort int64,
+func newKanikoStdinCheckpointer(podController *internal.PodController,
+	kubeletController internal.KubeletController,
 	kanikoSecretName,
 	checkpointerNamespace,
 	checkpointImagePrefix,
 	checkpointImageBase string) Checkpointer {
 	return &kanikoStdinCheckpointer{
-		internal.NewPodController(client, config),
-		kubeletPort,
+		podController,
+		kubeletController,
 		kanikoSecretName,
 		checkpointerNamespace,
 		checkpointImagePrefix,
@@ -52,7 +49,7 @@ func (cp *kanikoStdinCheckpointer) Checkpoint(ctx context.Context, params Checkp
 	defer cp.DeletePod(context.WithoutCancel(ctx), cp.checkpointerNamespace, kanikoPodName)
 
 	lg.Debug().Msg("calling Kubelet checkpointer")
-	checkpointTarName, err := internal.CallKubeletCheckpoint(ctx, cp.kubeletPort, params.ContainerIdentifier.String())
+	checkpointTarName, err := cp.kubeletController.CallKubeletCheckpoint(ctx, params.ContainerIdentifier.String())
 	if err != nil {
 		return "", fmt.Errorf("could not checkpointer container: %s with error %w", params.ContainerIdentifier, err)
 	}

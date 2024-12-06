@@ -6,7 +6,7 @@ metadata:
 data:
   KUBELET_PORT: "10250"
   KUBELET_CERT_FILE: "/etc/kubernetes/pki/apiserver-kubelet-client.crt"
-  KUBELET_CERT_KEY: "/etc/kubernetes/pki/apiserver-kubelet-client.key"
+  KUBELET_KEY_FILE: "/etc/kubernetes/pki/apiserver-kubelet-client.key"
   KUBELET_ALLOW_INSECURE: "true" # Remove in case kubelet is serving a valid certificate (not self-signed)
   CHECKPOINT_BASE_IMAGE: "pbaran555/checkpoint-base"
   # DISABLE_ROUTE_FORWARD: "true" # uncomment to disable routing to specific node (for single-node cluster)

@@ -7,15 +7,13 @@ import (
 	"github.com/rs/zerolog"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
-	restclient "k8s.io/client-go/rest"
 	"os"
 	"time"
 )
 
 type kanikoFSCheckpointer struct {
 	*internal.PodController
-	kubeletPort           int64
+	internal.KubeletController
 	kanikoSecretName      string
 	checkpointerNamespace string
 	checkpointerNode      string
@@ -23,17 +21,16 @@ type kanikoFSCheckpointer struct {
 	checkpointImageBase   string
 }
 
-func newKanikoFSCheckpointer(client kubernetes.Interface,
-	config *restclient.Config,
-	kubeletPort int64,
+func newKanikoFSCheckpointer(podController *internal.PodController,
+	kubeletController internal.KubeletController,
 	kanikoSecretName,
 	checkpointerNamespace,
 	checkpointerNode,
 	checkpointImagePrefix,
 	checkpointImageBase string) Checkpointer {
 	return &kanikoFSCheckpointer{
-		internal.NewPodController(client, config),
-		kubeletPort,
+		podController,
+		kubeletController,
 		kanikoSecretName,
 		checkpointerNamespace,
 		checkpointerNode,
@@ -46,7 +43,7 @@ func (cp *kanikoFSCheckpointer) Checkpoint(ctx context.Context, params Checkpoin
 	lg := zerolog.Ctx(ctx)
 	checkpointImageName := cp.checkpointImagePrefix + ":" + params.CheckpointIdentifier
 
-	checkpointTarName, err := internal.CallKubeletCheckpoint(ctx, cp.kubeletPort, params.ContainerIdentifier.String())
+	checkpointTarName, err := cp.KubeletController.CallKubeletCheckpoint(ctx, params.ContainerIdentifier.String())
 	if err != nil {
 		return "", fmt.Errorf("could not checkpointer container: %s with error: %w", params.ContainerIdentifier, err)
 	}

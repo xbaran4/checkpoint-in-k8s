@@ -7,52 +7,65 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 )
+
+var ErrContainerNotFound = fmt.Errorf("kubelet responded with 404 status code")
 
 type kubeletCheckpointResponse struct {
 	Items []string `json:"items"`
 }
 
-var ErrContainerNotFound = fmt.Errorf("kubelet responded with 404 status code")
+type KubeletController interface {
+	CallKubeletCheckpoint(ctx context.Context, containerPath string) (string, error)
+}
 
-func httpClient() (*http.Client, error) { // TODO: check if needed
-	cert, err := tls.LoadX509KeyPair(os.Getenv("KUBELET_CERT_FILE"), os.Getenv("KUBELET_CERT_KEY"))
+func NewKubeletController(kubeletCertFile, kubeletKeyFile, kubeletBaseUrl string, allowInsecure bool) (KubeletController, error) {
+	httpClient, err := newHttpClient(kubeletCertFile, kubeletKeyFile, allowInsecure)
 	if err != nil {
-		return nil, fmt.Errorf("could not load client cert-key pair: %w", err)
+		return nil, fmt.Errorf("error creating http client for kubelet: %w", err)
 	}
+	return &kubeletController{
+		kubeletBaseUrl,
+		httpClient,
+	}, nil
+}
 
+func newHttpClient(kubeletCertFile, kubeletKeyFile string, allowInsecure bool) (*http.Client, error) {
+	cert, err := tls.LoadX509KeyPair(kubeletCertFile, kubeletKeyFile)
+	if err != nil {
+		return nil, fmt.Errorf("could not load client X509 cert-key pair: %w", err)
+	}
 	return &http.Client{
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
 				Certificates:       []tls.Certificate{cert},
-				InsecureSkipVerify: os.Getenv("KUBELET_ALLOW_INSECURE") == "true",
+				InsecureSkipVerify: allowInsecure,
 			},
 		},
 	}, nil
 }
 
-func CallKubeletCheckpoint(ctx context.Context, kubeletPort int64, containerPath string) (string, error) {
-	requestURL := fmt.Sprintf("https://localhost:%d/checkpoint/%s", kubeletPort, containerPath)
+type kubeletController struct {
+	kubeletBaseUrl string
+	*http.Client
+}
+
+func (kc kubeletController) CallKubeletCheckpoint(ctx context.Context, containerPath string) (string, error) {
+	requestURL := fmt.Sprintf("%s/checkpoint/%s", kc.kubeletBaseUrl, containerPath)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL, nil)
 	if err != nil {
 		return "", fmt.Errorf("could not create request: %w", err)
 	}
 
-	client, err := httpClient()
-	if err != nil {
-		return "", err
-	}
-
-	res, err := client.Do(req)
+	res, err := kc.Client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("error making http request: %w", err)
 	}
 	defer res.Body.Close()
 
 	if res.StatusCode == http.StatusNotFound {
-		return "", ErrContainerNotFound
+		return "", ErrContainerNotFound // TODO: not found
 	}
 
 	body, err := io.ReadAll(res.Body)
@@ -70,7 +83,7 @@ func CallKubeletCheckpoint(ctx context.Context, kubeletPort int64, containerPath
 		return "", fmt.Errorf("failed to parse JSON response from kubelet: %w", err)
 	}
 
-	if len(kubeletCheckpointResponse.Items) == 0 {
+	if len(kubeletCheckpointResponse.Items) != 1 {
 		return "", fmt.Errorf("unexpected response body from kubelet: %s", body)
 	}
 	return kubeletCheckpointResponse.Items[0], nil
