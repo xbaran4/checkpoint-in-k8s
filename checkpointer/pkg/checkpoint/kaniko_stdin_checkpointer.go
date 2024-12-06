@@ -1,4 +1,4 @@
-package checkpointer
+package checkpoint
 
 import (
 	"checkpoint-in-k8s/internal"
@@ -16,38 +16,45 @@ const kanikoContainerName = "kaniko"
 
 type kanikoStdinCheckpointer struct {
 	*internal.PodController
+	kubeletPort           int64
 	kanikoSecretName      string
 	checkpointerNamespace string
+	checkpointImagePrefix string
 	checkpointImageBase   string
 }
 
 func newKanikoStdinCheckpointer(client kubernetes.Interface,
 	config *restclient.Config,
+	kubeletPort int64,
 	kanikoSecretName,
 	checkpointerNamespace,
+	checkpointImagePrefix,
 	checkpointImageBase string) Checkpointer {
 	return &kanikoStdinCheckpointer{
 		internal.NewPodController(client, config),
+		kubeletPort,
 		kanikoSecretName,
 		checkpointerNamespace,
+		checkpointImagePrefix,
 		checkpointImageBase,
 	}
 }
 
-func (cp *kanikoStdinCheckpointer) Checkpoint(ctx context.Context, params CheckpointParams) error {
+func (cp *kanikoStdinCheckpointer) Checkpoint(ctx context.Context, params CheckpointerParams) (string, error) {
 	lg := zerolog.Ctx(ctx)
+	checkpointImageName := cp.checkpointImagePrefix + ":" + params.CheckpointIdentifier
 
 	lg.Debug().Msg("creating kaniko pod")
-	kanikoPodName, err := cp.CreatePod(ctx, cp.getKanikoManifest(params.CheckpointIdentifier), cp.checkpointerNamespace)
+	kanikoPodName, err := cp.CreatePod(ctx, cp.getKanikoManifest(checkpointImageName), cp.checkpointerNamespace)
 	if err != nil {
-		return fmt.Errorf("could not create checkpointer container: %s with error %w", params.ContainerIdentifier, err)
+		return "", fmt.Errorf("could not create checkpointer container: %s with error %w", params.ContainerIdentifier, err)
 	}
 	defer cp.DeletePod(context.WithoutCancel(ctx), cp.checkpointerNamespace, kanikoPodName)
 
 	lg.Debug().Msg("calling Kubelet checkpointer")
-	checkpointTarName, err := internal.CallKubeletCheckpoint(ctx, params.ContainerIdentifier.String())
+	checkpointTarName, err := internal.CallKubeletCheckpoint(ctx, cp.kubeletPort, params.ContainerIdentifier.String())
 	if err != nil {
-		return fmt.Errorf("could not checkpointer container: %s with error %w", params.ContainerIdentifier, err)
+		return "", fmt.Errorf("could not checkpointer container: %s with error %w", params.ContainerIdentifier, err)
 	}
 	defer os.Remove(checkpointTarName)
 	lg.Debug().Str("tarName", checkpointTarName).Msg("successfully created checkpointer tar")
@@ -59,9 +66,9 @@ func (cp *kanikoStdinCheckpointer) Checkpoint(ctx context.Context, params Checkp
 		lg.Debug().Msg("successfully deleted checkpointed Pod")
 	}
 
-	filledDockerfileTemplate, err := internal.DockerfileFromTemplate(checkpointTarName)
+	filledDockerfileTemplate, err := internal.DockerfileFromTemplate(cp.checkpointImageBase, checkpointTarName)
 	if err != nil {
-		return fmt.Errorf("could not create checkpointer container: %s with error %w", params.ContainerIdentifier, err)
+		return "", fmt.Errorf("could not create checkpointer container: %s with error %w", params.ContainerIdentifier, err)
 	}
 	defer os.Remove(filledDockerfileTemplate)
 	lg.Debug().Msg("successfully created new Dockerfile from template")
@@ -72,20 +79,20 @@ func (cp *kanikoStdinCheckpointer) Checkpoint(ctx context.Context, params Checkp
 	})
 
 	if err != nil {
-		return fmt.Errorf("could not create checkpointer container: %s with error %w", params.ContainerIdentifier, err)
+		return "", fmt.Errorf("could not create checkpointer container: %s with error %w", params.ContainerIdentifier, err)
 	}
 	defer os.Remove(buildContextTar)
 	lg.Debug().Msg("successfully built tar.gz with build context")
 
 	if err = cp.AttachAndStreamToPod(ctx, kanikoContainerName, kanikoPodName, cp.checkpointerNamespace, buildContextTar); err != nil {
-		return fmt.Errorf("failed to attach to pod: %w", err)
+		return "", fmt.Errorf("failed to attach to pod: %w", err)
 	}
 
 	lg.Debug().Msg("checkpointing done, about to cleanup resources")
-	return nil
+	return checkpointImageName, nil
 }
 
-func (cp *kanikoStdinCheckpointer) getKanikoManifest(imageTag string) *v1.Pod {
+func (cp *kanikoStdinCheckpointer) getKanikoManifest(checkpointImageName string) *v1.Pod {
 	pod := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: "kaniko-",
@@ -98,7 +105,7 @@ func (cp *kanikoStdinCheckpointer) getKanikoManifest(imageTag string) *v1.Pod {
 					Args: []string{
 						"--dockerfile=Dockerfile",
 						"--context=tar://stdin",
-						"--destination=" + cp.checkpointImageBase + ":" + imageTag,
+						"--destination=" + checkpointImageName,
 					},
 					Stdin:     true,
 					StdinOnce: true,

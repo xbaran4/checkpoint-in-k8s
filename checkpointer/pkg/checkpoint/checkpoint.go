@@ -1,4 +1,4 @@
-package checkpointer
+package checkpoint
 
 import (
 	"checkpoint-in-k8s/pkg/config"
@@ -7,14 +7,14 @@ import (
 	"k8s.io/client-go/rest"
 )
 
-type CheckpointParams struct {
+type CheckpointerParams struct {
 	ContainerIdentifier  ContainerIdentifier
 	DeletePod            bool
 	CheckpointIdentifier string
 }
 
 type Checkpointer interface {
-	Checkpoint(ctx context.Context, params CheckpointParams) error
+	Checkpoint(ctx context.Context, params CheckpointerParams) (string, error)
 }
 
 func NewCheckpointer(client *kubernetes.Clientset, config *rest.Config, checkpointerConfig config.CheckpointerConfig) Checkpointer {
@@ -22,18 +22,22 @@ func NewCheckpointer(client *kubernetes.Clientset, config *rest.Config, checkpoi
 		return newKanikoFSCheckpointer(
 			client,
 			config,
+			checkpointerConfig.KubeletPort,
 			checkpointerConfig.KanikoSecretName,
 			checkpointerConfig.CheckpointerNamespace,
 			checkpointerConfig.CheckpointerNode,
-			checkpointerConfig.CheckpointImageBase,
+			checkpointerConfig.CheckpointImagePrefix,
+			checkpointerConfig.CheckpointBaseImage,
 		)
 	}
 	return newKanikoStdinCheckpointer(
 		client,
 		config,
+		checkpointerConfig.KubeletPort,
 		checkpointerConfig.KanikoSecretName,
 		checkpointerConfig.CheckpointerNamespace,
-		checkpointerConfig.CheckpointImageBase,
+		checkpointerConfig.CheckpointImagePrefix,
+		checkpointerConfig.CheckpointBaseImage,
 	)
 }
 

@@ -7,15 +7,15 @@ import (
 )
 
 type checkpointDockerfile struct {
-	CheckpointBaseImage string
 	TarFile             string
+	CheckpointBaseImage string
 }
 
 // This name is tied to the filename in ./templates and in Dockerfile.
 // In case of change, these should not be forgotten about.
 const templateFilename = "dockerfile.tmpl"
 
-func DockerfileFromTemplate(checkpointTarName string) (string, error) {
+func DockerfileFromTemplate(checkpointBaseImage, checkpointTarName string) (string, error) {
 	filledTemplate, err := os.CreateTemp("", "dockerfile-*")
 	if err != nil {
 		return "", err
@@ -31,7 +31,7 @@ func DockerfileFromTemplate(checkpointTarName string) (string, error) {
 	// TODO: make base image with both cri-o and containerd labels
 	err = templateFile.Execute(filledTemplate,
 		checkpointDockerfile{
-			os.Getenv("CHECKPOINT_BASE_IMAGE"),
+			checkpointBaseImage,
 			filepath.Base(checkpointTarName),
 		},
 	)

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/rs/zerolog/log"
 	"os"
+	"strconv"
 )
 
 type Environment uint8
@@ -17,9 +18,13 @@ const (
 type CheckpointerConfig struct {
 	CheckpointerNamespace string
 	CheckpointerNode      string
-	CheckpointImageBase   string
-	KubeletPort           string
+	CheckpointImagePrefix string
+	CheckpointBaseImage   string
+	CheckpointerPort      int64
+	KubeletPort           int64
+	KanikoTimoutSeconds   int64
 	KanikoSecretName      string
+	StorageBasePath       string
 	DisableRouteForward   bool
 	UseKanikoFS           bool
 	Environment           Environment
@@ -29,9 +34,9 @@ func LoadCheckpointerConfig() (CheckpointerConfig, error) {
 	var err error
 	config := CheckpointerConfig{}
 
-	config.CheckpointImageBase = os.Getenv("CP_IMAGE_BASE")
-	if config.CheckpointImageBase == "" {
-		err = errors.Join(err, fmt.Errorf("CP_IMAGE_BASE environment variable not set, example: 'quay.io/pbaran/checkpointer'"))
+	config.CheckpointImagePrefix = os.Getenv("CP_IMAGE_PREFIX")
+	if config.CheckpointImagePrefix == "" {
+		err = errors.Join(err, fmt.Errorf("CP_IMAGE_BASE environment variable not set, example: 'quay.io/pbaran/checkpointed'"))
 	}
 
 	config.CheckpointerNamespace = os.Getenv("POD_NAMESPACE")
@@ -48,8 +53,13 @@ func LoadCheckpointerConfig() (CheckpointerConfig, error) {
 		return CheckpointerConfig{}, err
 	}
 
-	config.KubeletPort = getOrDefault("KUBELET_PORT", "10250")
+	config.CheckpointerPort = getOrDefaultNonNegativeNumber("CHECKPOINTER_PORT", 3333)
+	config.KubeletPort = getOrDefaultNonNegativeNumber("KUBELET_PORT", 10250)
+	config.KanikoTimoutSeconds = getOrDefaultNonNegativeNumber("KANIKO_TIMEOUT", 30)
+
+	config.CheckpointBaseImage = getOrDefault("CHECKPOINT_BASE_IMAGE", "pbaran555/checkpoint-base")
 	config.KanikoSecretName = getOrDefault("KANIKO_SECRET_NAME", "kaniko-secret")
+	config.StorageBasePath = getOrDefault("STORAGE_BASE_PATH", "/tmp/checkpointer")
 
 	if os.Getenv("ENVIRONMENT") == "prod" {
 		config.Environment = ProductionEnvironment
@@ -78,4 +88,19 @@ func getOrDefault(env, defaultVal string) string {
 		return defaultVal
 	}
 	return val
+}
+
+func getOrDefaultNonNegativeNumber(env string, defaultVal int64) int64 {
+	val := os.Getenv(env)
+	if val == "" {
+		log.Info().Msg(fmt.Sprintf("%s environment variable not set, defaulting to: %d", env, defaultVal))
+		return defaultVal
+	}
+	number, err := strconv.ParseInt(val, 10, 64)
+	if err != nil || number < 0 {
+		log.Info().Msg(fmt.Sprintf("%s environment variable malformed, defaulting to: %d", env, defaultVal))
+		return defaultVal
+	}
+
+	return number
 }

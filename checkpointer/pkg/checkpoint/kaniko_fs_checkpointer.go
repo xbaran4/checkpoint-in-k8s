@@ -1,4 +1,4 @@
-package checkpointer
+package checkpoint
 
 import (
 	"checkpoint-in-k8s/internal"
@@ -15,33 +15,40 @@ import (
 
 type kanikoFSCheckpointer struct {
 	*internal.PodController
+	kubeletPort           int64
 	kanikoSecretName      string
 	checkpointerNamespace string
 	checkpointerNode      string
+	checkpointImagePrefix string
 	checkpointImageBase   string
 }
 
 func newKanikoFSCheckpointer(client kubernetes.Interface,
 	config *restclient.Config,
+	kubeletPort int64,
 	kanikoSecretName,
 	checkpointerNamespace,
 	checkpointerNode,
+	checkpointImagePrefix,
 	checkpointImageBase string) Checkpointer {
 	return &kanikoFSCheckpointer{
 		internal.NewPodController(client, config),
+		kubeletPort,
 		kanikoSecretName,
 		checkpointerNamespace,
 		checkpointerNode,
+		checkpointImagePrefix,
 		checkpointImageBase,
 	}
 }
 
-func (cp *kanikoFSCheckpointer) Checkpoint(ctx context.Context, params CheckpointParams) error {
+func (cp *kanikoFSCheckpointer) Checkpoint(ctx context.Context, params CheckpointerParams) (string, error) {
 	lg := zerolog.Ctx(ctx)
+	checkpointImageName := cp.checkpointImagePrefix + ":" + params.CheckpointIdentifier
 
-	checkpointTarName, err := internal.CallKubeletCheckpoint(ctx, params.ContainerIdentifier.String())
+	checkpointTarName, err := internal.CallKubeletCheckpoint(ctx, cp.kubeletPort, params.ContainerIdentifier.String())
 	if err != nil {
-		return fmt.Errorf("could not checkpointer container: %s with error: %w", params.ContainerIdentifier, err)
+		return "", fmt.Errorf("could not checkpointer container: %s with error: %w", params.ContainerIdentifier, err)
 	}
 	defer os.Remove(checkpointTarName)
 	lg.Debug().Str("tarName", checkpointTarName).Msg("successfully created checkpointer tar")
@@ -55,34 +62,34 @@ func (cp *kanikoFSCheckpointer) Checkpoint(ctx context.Context, params Checkpoin
 		}()
 	}
 
-	filledDockerfileTemplate, err := internal.DockerfileFromTemplate(checkpointTarName)
+	filledDockerfileTemplate, err := internal.DockerfileFromTemplate(cp.checkpointImageBase, checkpointTarName)
 	if err != nil {
-		return fmt.Errorf("could not create checkpointer container: %s with error %w", params.ContainerIdentifier, err)
+		return "", fmt.Errorf("could not create checkpointer container: %s with error %w", params.ContainerIdentifier, err)
 	}
 	defer os.Remove(filledDockerfileTemplate)
 	lg.Debug().Msg("successfully created new Dockerfile from template")
 
 	tmpDir, err := internal.PrepareDir(checkpointTarName, filledDockerfileTemplate)
 	if err != nil {
-		return fmt.Errorf("could not create checkpointer container: %s with error %w", params.ContainerIdentifier, err)
+		return "", fmt.Errorf("could not create checkpointer container: %s with error %w", params.ContainerIdentifier, err)
 	}
 
-	kanikoPodName, err := cp.CreatePod(ctx, cp.getKanikoManifest(params.CheckpointIdentifier, tmpDir), cp.checkpointerNamespace)
+	kanikoPodName, err := cp.CreatePod(ctx, cp.getKanikoManifest(checkpointImageName, tmpDir), cp.checkpointerNamespace)
 	if err != nil {
-		return fmt.Errorf("could not create checkpointer container: %s with error %w", params.ContainerIdentifier, err)
+		return "", fmt.Errorf("could not create checkpointer container: %s with error %w", params.ContainerIdentifier, err)
 	}
 	defer cp.DeletePod(context.WithoutCancel(ctx), cp.checkpointerNamespace, kanikoPodName)
 
 	err = cp.WaitForPodSucceeded(ctx, kanikoPodName, cp.checkpointerNamespace, time.Second*30) // TODO: make timeout env var?
 	if err != nil {
-		return fmt.Errorf("timed out waiting for Pod to complete: %w", err)
+		return "", fmt.Errorf("timed out waiting for Pod to complete: %w", err)
 	}
 
 	lg.Debug().Msg("checkpointing done, about to cleanup resources")
-	return nil
+	return checkpointImageName, nil
 }
 
-func (cp *kanikoFSCheckpointer) getKanikoManifest(imageTag, buildContextPath string) *v1.Pod {
+func (cp *kanikoFSCheckpointer) getKanikoManifest(checkpointImageName, buildContextPath string) *v1.Pod {
 	hostPathType := v1.HostPathDirectory
 	pod := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -97,7 +104,7 @@ func (cp *kanikoFSCheckpointer) getKanikoManifest(imageTag, buildContextPath str
 					Args: []string{
 						"--dockerfile=/kaniko-build-context/Dockerfile",
 						"--context=dir:///kaniko-build-context",
-						"--destination=" + cp.checkpointImageBase + ":" + imageTag,
+						"--destination=" + checkpointImageName,
 					},
 					Stdin:     true,
 					StdinOnce: true,

@@ -16,7 +16,7 @@ type kubeletCheckpointResponse struct {
 
 var ErrContainerNotFound = fmt.Errorf("kubelet responded with 404 status code")
 
-func httpClient() (*http.Client, error) {
+func httpClient() (*http.Client, error) { // TODO: check if needed
 	cert, err := tls.LoadX509KeyPair(os.Getenv("KUBELET_CERT_FILE"), os.Getenv("KUBELET_CERT_KEY"))
 	if err != nil {
 		return nil, fmt.Errorf("could not load client cert-key pair: %w", err)
@@ -26,14 +26,14 @@ func httpClient() (*http.Client, error) {
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
 				Certificates:       []tls.Certificate{cert},
-				InsecureSkipVerify: os.Getenv("KUBELET_ALLOW_INSECURE") != "",
+				InsecureSkipVerify: os.Getenv("KUBELET_ALLOW_INSECURE") == "true",
 			},
 		},
 	}, nil
 }
 
-func CallKubeletCheckpoint(ctx context.Context, containerPath string) (string, error) {
-	requestURL := fmt.Sprintf("https://localhost:%s/checkpoint/%s", os.Getenv("KUBELET_PORT"), containerPath)
+func CallKubeletCheckpoint(ctx context.Context, kubeletPort int64, containerPath string) (string, error) {
+	requestURL := fmt.Sprintf("https://localhost:%d/checkpoint/%s", kubeletPort, containerPath)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL, nil)
 	if err != nil {
