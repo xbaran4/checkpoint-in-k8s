@@ -60,7 +60,7 @@ func (cp *kanikoStdinCheckpointer) Checkpoint(ctx context.Context, params Checkp
 	lg.Debug().Str("tarName", checkpointTarName).Msg("successfully created checkpointer tar")
 
 	if params.DeletePod {
-		if err := cp.DeletePod(ctx, params.ContainerIdentifier.Namespace, params.ContainerIdentifier.PodName); err != nil {
+		if err := cp.DeletePod(ctx, params.ContainerIdentifier.Namespace, params.ContainerIdentifier.Pod); err != nil {
 			lg.Warn().Err(err).Msg("could not delete pod") // TODO: fail on delete?
 		}
 		lg.Debug().Msg("successfully deleted checkpointed Pod")

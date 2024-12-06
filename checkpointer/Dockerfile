@@ -13,13 +13,10 @@ WORKDIR /checkpointer-app
 
 COPY internal/templates/dockerfile.tmpl ./dockerfile.tmpl
 COPY --from=builder /checkpointer ./checkpointer
-RUN chmod u+x ./checkpointer
 
 ENV KUBELET_PORT="10250"
 ENV KUBELET_CERT_FILE="/etc/kubernetes/pki/apiserver-kubelet-client.crt"
 ENV KUBELET_CERT_KEY="/etc/kubernetes/pki/apiserver-kubelet-client.key"
-
-ENV CHECKPOINT_BASE_IMAGE="pbaran555/checkpoint-base"
 
 EXPOSE 3333
 

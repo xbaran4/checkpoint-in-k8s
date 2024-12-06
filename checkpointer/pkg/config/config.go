@@ -34,19 +34,19 @@ func LoadCheckpointerConfig() (CheckpointerConfig, error) {
 	var err error
 	config := CheckpointerConfig{}
 
-	config.CheckpointImagePrefix = os.Getenv("CP_IMAGE_PREFIX")
+	config.CheckpointImagePrefix = os.Getenv("CHECKPOINT_IMAGE_PREFIX")
 	if config.CheckpointImagePrefix == "" {
-		err = errors.Join(err, fmt.Errorf("CP_IMAGE_BASE environment variable not set, example: 'quay.io/pbaran/checkpointed'"))
+		err = errors.Join(err, fmt.Errorf("CHECKPOINT_IMAGE_PREFIX environment variable not set, example: 'quay.io/pbaran/checkpointed'"))
 	}
 
-	config.CheckpointerNamespace = os.Getenv("POD_NAMESPACE")
+	config.CheckpointerNamespace = os.Getenv("CHECKPOINTER_NAMESPACE")
 	if config.CheckpointerNamespace == "" {
-		err = errors.Join(err, fmt.Errorf("POD_NAMESPACE environment variable not set, should be set by Kubernetes"))
+		err = errors.Join(err, fmt.Errorf("CHECKPOINTER_NAMESPACE environment variable not set, should be set by Kubernetes"))
 	}
 
-	config.CheckpointerNode = os.Getenv("NODE_NAME")
+	config.CheckpointerNode = os.Getenv("CHECKPOINTER_NODE")
 	if config.CheckpointerNode == "" {
-		err = errors.Join(err, fmt.Errorf("NODE_NAME environment variable not set, should be set by Kubernetes"))
+		err = errors.Join(err, fmt.Errorf("CHECKPOINTER_NODE environment variable not set, should be set by Kubernetes"))
 	}
 
 	if err != nil {

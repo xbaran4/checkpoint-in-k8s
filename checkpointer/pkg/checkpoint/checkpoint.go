@@ -42,11 +42,11 @@ func NewCheckpointer(client *kubernetes.Clientset, config *rest.Config, checkpoi
 }
 
 type ContainerIdentifier struct {
-	Namespace     string `json:"namespace"`
-	PodName       string `json:"podName"`
-	ContainerName string `json:"containerName"`
+	Namespace string `json:"namespace"`
+	Pod       string `json:"pod"`
+	Container string `json:"container"`
 }
 
 func (ci ContainerIdentifier) String() string {
-	return ci.Namespace + "/" + ci.PodName + "/" + ci.ContainerName
+	return ci.Namespace + "/" + ci.Pod + "/" + ci.Container
 }

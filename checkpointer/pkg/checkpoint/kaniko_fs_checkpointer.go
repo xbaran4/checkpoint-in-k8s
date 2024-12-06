@@ -55,7 +55,7 @@ func (cp *kanikoFSCheckpointer) Checkpoint(ctx context.Context, params Checkpoin
 
 	if params.DeletePod {
 		defer func() {
-			if err := cp.DeletePod(ctx, params.ContainerIdentifier.Namespace, params.ContainerIdentifier.PodName); err != nil {
+			if err := cp.DeletePod(ctx, params.ContainerIdentifier.Namespace, params.ContainerIdentifier.Pod); err != nil {
 				lg.Warn().Err(err).Msg("could not delete pod")
 			}
 			lg.Debug().Msg("successfully deleted checkpointed Pod")
