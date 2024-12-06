@@ -1,12 +1,15 @@
 package main
 
 import (
+	"checkpoint-in-k8s/pkg/checkpoint"
 	"checkpoint-in-k8s/pkg/config"
+	"checkpoint-in-k8s/pkg/manager"
 	"checkpoint-in-k8s/web"
 	"errors"
 	"github.com/rs/zerolog"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"strconv"
 
 	"github.com/rs/zerolog/log"
 	"net/http"
@@ -38,21 +41,27 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
-	ch := web.NewCheckpointHandler(clientset, inClusterConfig, checkpointerConfig)
+
+	cp := checkpoint.NewCheckpointer(clientset, inClusterConfig, checkpointerConfig)
+	storage := manager.NewCheckpointStorage(checkpointerConfig)
+	mgr := manager.NewCheckpointManager(cp, storage)
+
+	ch := web.NewCheckpointHandler(mgr, checkpointerConfig.CheckpointerNode)
 	var checkpointHandler http.Handler = http.HandlerFunc(ch.HandleCheckpoint)
 	var stateHandler http.Handler = http.HandlerFunc(ch.HandleCheckState)
 
 	if !checkpointerConfig.DisableRouteForward {
-		proxy := web.NewRouteProxyMiddleware(clientset, inClusterConfig, checkpointerConfig.CheckpointerNode)
-		checkpointHandler = proxy.RouteProxyMiddleware(checkpointHandler)
-		stateHandler = proxy.RouteProxyMiddleware(stateHandler)
+		proxy := web.NewRouteProxyMiddleware(clientset, inClusterConfig, checkpointerConfig.CheckpointerNode, checkpointerConfig.CheckpointerPort)
+		checkpointHandler = proxy.CheckpointRouteProxyMiddleware(checkpointHandler)
+		stateHandler = proxy.StateRouteProxyMiddleware(stateHandler)
 	}
 
 	mux.Handle("POST /checkpoint/{ns}/{pod}/{container}", checkpointHandler)
-	mux.Handle("GET /checkpoint/{ns}/{pod}/{container}", stateHandler)
+	mux.Handle("GET /checkpoint", stateHandler)
 
-	log.Info().Msg("starting http server on port 3333")
-	err = http.ListenAndServe(":3333", mux)
+	portNumber := strconv.FormatInt(checkpointerConfig.CheckpointerPort, 10)
+	log.Info().Msg("starting http server on port: " + portNumber)
+	err = http.ListenAndServe(":"+portNumber, mux)
 
 	if errors.Is(err, http.ErrServerClosed) {
 		log.Info().Msg("server closed")
