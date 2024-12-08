@@ -2,6 +2,7 @@ package checkpoint
 
 import (
 	"checkpoint-in-k8s/internal"
+	"checkpoint-in-k8s/pkg/config"
 	"context"
 	"fmt"
 	"github.com/rs/zerolog"
@@ -14,52 +15,30 @@ import (
 type kanikoFSCheckpointer struct {
 	*internal.PodController
 	internal.KubeletController
-	kanikoSecretName      string
-	checkpointerNamespace string
-	checkpointerNode      string
-	checkpointImagePrefix string
-	checkpointImageBase   string
+	config.CheckpointConfig
 }
 
 func newKanikoFSCheckpointer(podController *internal.PodController,
-	kubeletController internal.KubeletController,
-	kanikoSecretName,
-	checkpointerNamespace,
-	checkpointerNode,
-	checkpointImagePrefix,
-	checkpointImageBase string) Checkpointer {
+	kubeletController internal.KubeletController, checkpointConfig config.CheckpointConfig) Checkpointer {
 	return &kanikoFSCheckpointer{
 		podController,
 		kubeletController,
-		kanikoSecretName,
-		checkpointerNamespace,
-		checkpointerNode,
-		checkpointImagePrefix,
-		checkpointImageBase,
+		checkpointConfig,
 	}
 }
 
 func (cp *kanikoFSCheckpointer) Checkpoint(ctx context.Context, params CheckpointerParams) (string, error) {
 	lg := zerolog.Ctx(ctx)
-	checkpointImageName := cp.checkpointImagePrefix + ":" + params.CheckpointIdentifier
+	checkpointImageName := cp.CheckpointImagePrefix + ":" + params.CheckpointIdentifier
 
-	checkpointTarName, err := cp.KubeletController.CallKubeletCheckpoint(ctx, params.ContainerIdentifier.String())
+	checkpointTarName, err := cp.CallKubeletCheckpoint(ctx, params.ContainerIdentifier.String())
 	if err != nil {
 		return "", fmt.Errorf("could not checkpointer container: %s with error: %w", params.ContainerIdentifier, err)
 	}
 	defer os.Remove(checkpointTarName)
 	lg.Debug().Str("tarName", checkpointTarName).Msg("successfully created checkpointer tar")
 
-	if params.DeletePod {
-		defer func() {
-			if err := cp.DeletePod(ctx, params.ContainerIdentifier.Namespace, params.ContainerIdentifier.Pod); err != nil {
-				lg.Warn().Err(err).Msg("could not delete pod")
-			}
-			lg.Debug().Msg("successfully deleted checkpointed Pod")
-		}()
-	}
-
-	filledDockerfileTemplate, err := internal.DockerfileFromTemplate(cp.checkpointImageBase, checkpointTarName)
+	filledDockerfileTemplate, err := internal.DockerfileFromTemplate(cp.CheckpointBaseImage, checkpointTarName)
 	if err != nil {
 		return "", fmt.Errorf("could not create checkpointer container: %s with error %w", params.ContainerIdentifier, err)
 	}
@@ -71,15 +50,24 @@ func (cp *kanikoFSCheckpointer) Checkpoint(ctx context.Context, params Checkpoin
 		return "", fmt.Errorf("could not create checkpointer container: %s with error %w", params.ContainerIdentifier, err)
 	}
 
-	kanikoPodName, err := cp.CreatePod(ctx, cp.getKanikoManifest(checkpointImageName, tmpDir), cp.checkpointerNamespace)
+	kanikoPodName, err := cp.CreatePod(ctx, cp.getKanikoManifest(checkpointImageName, tmpDir), cp.CheckpointerNamespace)
 	if err != nil {
 		return "", fmt.Errorf("could not create checkpointer container: %s with error %w", params.ContainerIdentifier, err)
 	}
-	defer cp.DeletePod(context.WithoutCancel(ctx), cp.checkpointerNamespace, kanikoPodName)
+	defer cp.DeletePod(context.WithoutCancel(ctx), cp.CheckpointerNamespace, kanikoPodName)
 
-	err = cp.WaitForPodSucceeded(ctx, kanikoPodName, cp.checkpointerNamespace, time.Second*30) // TODO: make timeout env var?
+	err = cp.WaitForPodSucceeded(ctx, kanikoPodName, cp.CheckpointerNamespace, time.Second*time.Duration(cp.KanikoTimeoutSeconds))
 	if err != nil {
 		return "", fmt.Errorf("timed out waiting for Pod to complete: %w", err)
+	}
+
+	if params.DeletePod {
+		defer func() {
+			if err := cp.DeletePod(ctx, params.ContainerIdentifier.Namespace, params.ContainerIdentifier.Pod); err != nil {
+				lg.Warn().Err(err).Msg("could not delete checkpointed pod")
+			}
+			lg.Debug().Msg("successfully deleted checkpointed Pod")
+		}()
 	}
 
 	lg.Debug().Msg("checkpointing done, about to cleanup resources")
@@ -93,7 +81,7 @@ func (cp *kanikoFSCheckpointer) getKanikoManifest(checkpointImageName, buildCont
 			GenerateName: "kaniko-",
 		},
 		Spec: v1.PodSpec{
-			NodeName: cp.checkpointerNode,
+			NodeName: cp.CheckpointerNode,
 			Containers: []v1.Container{
 				{
 					Name:  "kaniko",
@@ -123,7 +111,7 @@ func (cp *kanikoFSCheckpointer) getKanikoManifest(checkpointImageName, buildCont
 					Name: "kaniko-secret",
 					VolumeSource: v1.VolumeSource{
 						Secret: &v1.SecretVolumeSource{
-							SecretName: cp.kanikoSecretName,
+							SecretName: cp.KanikoSecretName,
 							Items: []v1.KeyToPath{
 								{
 									Key:  ".dockerconfigjson",

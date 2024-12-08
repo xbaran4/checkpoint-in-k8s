@@ -19,37 +19,17 @@ type Checkpointer interface {
 	Checkpoint(ctx context.Context, params CheckpointerParams) (string, error)
 }
 
-func NewCheckpointer(client *kubernetes.Clientset, config *rest.Config, checkpointerConfig config.CheckpointerConfig) (Checkpointer, error) {
-	kubeletController, err := internal.NewKubeletController(
-		checkpointerConfig.KubeletCertFile,
-		checkpointerConfig.KubeletKeyFile,
-		checkpointerConfig.KubeletBaseUrl,
-		checkpointerConfig.KubeletAllowInsecure,
-	)
+func NewCheckpointer(client *kubernetes.Clientset, config *rest.Config, globalConfig config.GlobalConfig) (Checkpointer, error) {
+	kubeletController, err := internal.NewKubeletController(globalConfig.KubeletConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Kubelet controller; %w", err)
 	}
 	podController := internal.NewPodController(client, config)
 
-	if checkpointerConfig.UseKanikoFS {
-		return newKanikoFSCheckpointer(
-			podController,
-			kubeletController,
-			checkpointerConfig.KanikoSecretName,
-			checkpointerConfig.CheckpointerNamespace,
-			checkpointerConfig.CheckpointerNode,
-			checkpointerConfig.CheckpointImagePrefix,
-			checkpointerConfig.CheckpointBaseImage,
-		), nil
+	if globalConfig.UseKanikoFS {
+		return newKanikoFSCheckpointer(podController, kubeletController, globalConfig.CheckpointConfig), nil
 	}
-	return newKanikoStdinCheckpointer(
-		podController,
-		kubeletController,
-		checkpointerConfig.KanikoSecretName,
-		checkpointerConfig.CheckpointerNamespace,
-		checkpointerConfig.CheckpointImagePrefix,
-		checkpointerConfig.CheckpointBaseImage,
-	), nil
+	return newKanikoStdinCheckpointer(podController, kubeletController, globalConfig.CheckpointConfig), nil
 }
 
 type ContainerIdentifier struct {

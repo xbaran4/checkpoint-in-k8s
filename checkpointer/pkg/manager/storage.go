@@ -25,7 +25,7 @@ type checkpointDiskStorage struct {
 	storageBackend *diskv.Diskv
 }
 
-func NewCheckpointStorage(config config.CheckpointerConfig) CheckpointStorage {
+func NewCheckpointStorage(config config.GlobalConfig) CheckpointStorage {
 	storageBackend := diskv.New(diskv.Options{
 		BasePath:     config.StorageBasePath,
 		CacheSizeMax: 1024 * 1024,

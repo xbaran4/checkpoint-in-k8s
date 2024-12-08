@@ -2,51 +2,44 @@ package checkpoint
 
 import (
 	"checkpoint-in-k8s/internal"
+	"checkpoint-in-k8s/pkg/config"
 	"context"
 	"fmt"
 	"github.com/rs/zerolog"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"os"
+	"time"
 )
 
 const kanikoContainerName = "kaniko"
 
 type kanikoStdinCheckpointer struct {
 	*internal.PodController
-	kubeletController     internal.KubeletController
-	kanikoSecretName      string
-	checkpointerNamespace string
-	checkpointImagePrefix string
-	checkpointImageBase   string
+	kubeletController internal.KubeletController
+	config.CheckpointConfig
 }
 
 func newKanikoStdinCheckpointer(podController *internal.PodController,
 	kubeletController internal.KubeletController,
-	kanikoSecretName,
-	checkpointerNamespace,
-	checkpointImagePrefix,
-	checkpointImageBase string) Checkpointer {
+	checkpointConfig config.CheckpointConfig) Checkpointer {
 	return &kanikoStdinCheckpointer{
 		podController,
 		kubeletController,
-		kanikoSecretName,
-		checkpointerNamespace,
-		checkpointImagePrefix,
-		checkpointImageBase,
+		checkpointConfig,
 	}
 }
 
 func (cp *kanikoStdinCheckpointer) Checkpoint(ctx context.Context, params CheckpointerParams) (string, error) {
 	lg := zerolog.Ctx(ctx)
-	checkpointImageName := cp.checkpointImagePrefix + ":" + params.CheckpointIdentifier
+	checkpointImageName := cp.CheckpointImagePrefix + ":" + params.CheckpointIdentifier
 
 	lg.Debug().Msg("creating kaniko pod")
-	kanikoPodName, err := cp.CreatePod(ctx, cp.getKanikoManifest(checkpointImageName), cp.checkpointerNamespace)
+	kanikoPodName, err := cp.CreatePod(ctx, cp.getKanikoManifest(checkpointImageName), cp.CheckpointerNamespace)
 	if err != nil {
 		return "", fmt.Errorf("could not create checkpointer container: %s with error %w", params.ContainerIdentifier, err)
 	}
-	defer cp.DeletePod(context.WithoutCancel(ctx), cp.checkpointerNamespace, kanikoPodName)
+	defer cp.DeletePod(context.WithoutCancel(ctx), cp.CheckpointerNamespace, kanikoPodName)
 
 	lg.Debug().Msg("calling Kubelet checkpointer")
 	checkpointTarName, err := cp.kubeletController.CallKubeletCheckpoint(ctx, params.ContainerIdentifier.String())
@@ -56,14 +49,7 @@ func (cp *kanikoStdinCheckpointer) Checkpoint(ctx context.Context, params Checkp
 	defer os.Remove(checkpointTarName)
 	lg.Debug().Str("tarName", checkpointTarName).Msg("successfully created checkpointer tar")
 
-	if params.DeletePod {
-		if err := cp.DeletePod(ctx, params.ContainerIdentifier.Namespace, params.ContainerIdentifier.Pod); err != nil {
-			lg.Warn().Err(err).Msg("could not delete pod") // TODO: fail on delete?
-		}
-		lg.Debug().Msg("successfully deleted checkpointed Pod")
-	}
-
-	filledDockerfileTemplate, err := internal.DockerfileFromTemplate(cp.checkpointImageBase, checkpointTarName)
+	filledDockerfileTemplate, err := internal.DockerfileFromTemplate(cp.CheckpointBaseImage, checkpointTarName)
 	if err != nil {
 		return "", fmt.Errorf("could not create checkpointer container: %s with error %w", params.ContainerIdentifier, err)
 	}
@@ -81,8 +67,23 @@ func (cp *kanikoStdinCheckpointer) Checkpoint(ctx context.Context, params Checkp
 	defer os.Remove(buildContextTar)
 	lg.Debug().Msg("successfully built tar.gz with build context")
 
-	if err = cp.AttachAndStreamToPod(ctx, kanikoContainerName, kanikoPodName, cp.checkpointerNamespace, buildContextTar); err != nil {
+	if err = cp.AttachAndStreamToPod(ctx,
+		kanikoContainerName,
+		kanikoPodName,
+		cp.CheckpointerNamespace,
+		buildContextTar,
+		time.Second*time.Duration(cp.KanikoTimeoutSeconds),
+	); err != nil {
 		return "", fmt.Errorf("failed to attach to pod: %w", err)
+	}
+
+	if params.DeletePod {
+		defer func() {
+			if err := cp.DeletePod(ctx, params.ContainerIdentifier.Namespace, params.ContainerIdentifier.Pod); err != nil {
+				lg.Warn().Err(err).Msg("could not delete checkpointed pod")
+			}
+			lg.Debug().Msg("successfully deleted checkpointed Pod")
+		}()
 	}
 
 	lg.Debug().Msg("checkpointing done, about to cleanup resources")
@@ -120,7 +121,7 @@ func (cp *kanikoStdinCheckpointer) getKanikoManifest(checkpointImageName string)
 					Name: "kaniko-secret",
 					VolumeSource: v1.VolumeSource{
 						Secret: &v1.SecretVolumeSource{
-							SecretName: cp.kanikoSecretName,
+							SecretName: cp.KanikoSecretName,
 							Items: []v1.KeyToPath{
 								{
 									Key:  ".dockerconfigjson",

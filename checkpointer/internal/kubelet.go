@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"checkpoint-in-k8s/pkg/config"
 	"context"
 	"crypto/tls"
 	"encoding/json"
@@ -19,13 +20,13 @@ type KubeletController interface {
 	CallKubeletCheckpoint(ctx context.Context, containerPath string) (string, error)
 }
 
-func NewKubeletController(kubeletCertFile, kubeletKeyFile, kubeletBaseUrl string, allowInsecure bool) (KubeletController, error) {
-	httpClient, err := newHttpClient(kubeletCertFile, kubeletKeyFile, allowInsecure)
+func NewKubeletController(kubeletConfig config.KubeletConfig) (KubeletController, error) {
+	httpClient, err := newHttpClient(kubeletConfig.CertFile, kubeletConfig.KeyFile, kubeletConfig.AllowInsecure)
 	if err != nil {
 		return nil, fmt.Errorf("error creating http client for kubelet: %w", err)
 	}
 	return &kubeletController{
-		kubeletBaseUrl,
+		kubeletConfig.BaseUrl,
 		httpClient,
 	}, nil
 }
@@ -65,7 +66,7 @@ func (kc kubeletController) CallKubeletCheckpoint(ctx context.Context, container
 	defer res.Body.Close()
 
 	if res.StatusCode == http.StatusNotFound {
-		return "", ErrContainerNotFound // TODO: not found
+		return "", ErrContainerNotFound
 	}
 
 	body, err := io.ReadAll(res.Body)

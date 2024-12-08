@@ -42,7 +42,7 @@ func (pc *PodController) DeletePod(ctx context.Context, namespace, podName strin
 	return nil
 }
 
-func (pc *PodController) AttachAndStreamToPod(ctx context.Context, container, podName, namespace, buildContextTar string) error {
+func (pc *PodController) AttachAndStreamToPod(ctx context.Context, container, podName, namespace, buildContextTar string, timeout time.Duration) error {
 	lg := zerolog.Ctx(ctx).With().
 		Str("namespace", namespace).
 		Str("pod", podName).
@@ -72,7 +72,7 @@ func (pc *PodController) AttachAndStreamToPod(ctx context.Context, container, po
 	}
 	defer buildContextFile.Close()
 
-	err = pc.WaitForPodRunning(ctx, podName, namespace, time.Second*30) // TODO: make timeout env var?
+	err = pc.WaitForPodRunning(ctx, podName, namespace, timeout)
 	if err != nil {
 		return fmt.Errorf("timed out waiting for pod to start: %w", err)
 	}
@@ -88,7 +88,7 @@ func (pc *PodController) AttachAndStreamToPod(ctx context.Context, container, po
 		return fmt.Errorf("failed to stream to container stdin: %w", err)
 	}
 
-	err = pc.WaitForPodSucceeded(ctx, podName, namespace, time.Second*30) // TODO: make timeout env var?
+	err = pc.WaitForPodSucceeded(ctx, podName, namespace, timeout)
 	if err != nil {
 		return fmt.Errorf("timed out waiting for pod to complete: %w", err)
 	}

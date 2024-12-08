@@ -1,11 +1,13 @@
 package web
 
 import (
+	"checkpoint-in-k8s/internal"
 	"checkpoint-in-k8s/pkg/checkpoint"
 	"checkpoint-in-k8s/pkg/manager"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/rs/zerolog/log"
 	"io"
@@ -14,8 +16,8 @@ import (
 )
 
 type CheckpointRequestBody struct {
-	DeletePod bool `json:"deletePod"`
-	Async     bool `json:"async"`
+	DeletePod bool `json:"deletePod,omitempty"`
+	Async     bool `json:"async,omitempty"`
 }
 
 type TrackingHandleResponseBody struct {
@@ -67,6 +69,10 @@ func (ch *CheckpointHandler) HandleCheckpoint(rw http.ResponseWriter, req *http.
 	})
 
 	if err != nil {
+		if errors.Is(err, internal.ErrContainerNotFound) {
+			http.Error(rw, "checkpointer could not find the container", http.StatusNotFound)
+			return
+		}
 		lg.Error().Err(err).Msg("checkpointing failed")
 		http.Error(rw, err.Error(), http.StatusInternalServerError)
 		return
@@ -117,6 +123,10 @@ func (ch *CheckpointHandler) HandleCheckState(rw http.ResponseWriter, req *http.
 	}
 
 	if checkpointState.Error != nil {
+		if errors.Is(checkpointState.Error, internal.ErrContainerNotFound) {
+			http.Error(rw, "checkpointer could not find the container", http.StatusNotFound)
+			return
+		}
 		http.Error(rw, "checkpointing failed", http.StatusInternalServerError)
 		return
 	}

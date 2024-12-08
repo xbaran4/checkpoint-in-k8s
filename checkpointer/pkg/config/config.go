@@ -15,58 +15,72 @@ const (
 	DevelopmentEnvironment
 )
 
-type CheckpointerConfig struct {
+type KubeletConfig struct {
+	CertFile      string
+	KeyFile       string
+	BaseUrl       string
+	AllowInsecure bool
+}
+
+type CheckpointConfig struct {
 	CheckpointerNamespace string
 	CheckpointerNode      string
 	CheckpointImagePrefix string
 	CheckpointBaseImage   string
-	KubeletCertFile       string
-	KubeletKeyFile        string
 	KanikoSecretName      string
-	StorageBasePath       string
-	KubeletBaseUrl        string
-	CheckpointerPort      int64
-	KanikoTimoutSeconds   int64
-	KubeletAllowInsecure  bool
-	DisableRouteForward   bool
-	UseKanikoFS           bool
-	Environment           Environment
+	KanikoTimeoutSeconds  int64
 }
 
-func LoadCheckpointerConfig() (CheckpointerConfig, error) {
-	var err error
-	config := CheckpointerConfig{}
+type GlobalConfig struct {
+	CheckpointConfig    CheckpointConfig
+	KubeletConfig       KubeletConfig
+	StorageBasePath     string
+	CheckpointerPort    int64
+	DisableRouteForward bool
+	UseKanikoFS         bool
+	Environment         Environment
+}
 
-	config.CheckpointImagePrefix = os.Getenv("CHECKPOINT_IMAGE_PREFIX")
-	if config.CheckpointImagePrefix == "" {
+func LoadGlobalConfig() (GlobalConfig, error) {
+	var err error
+	config := GlobalConfig{}
+
+	config.CheckpointConfig.CheckpointImagePrefix = os.Getenv("CHECKPOINT_IMAGE_PREFIX")
+	if config.CheckpointConfig.CheckpointImagePrefix == "" {
 		err = errors.Join(err, fmt.Errorf("CHECKPOINT_IMAGE_PREFIX environment variable not set, example: 'quay.io/pbaran/checkpointed'"))
 	}
 
-	config.CheckpointerNamespace = os.Getenv("CHECKPOINTER_NAMESPACE")
-	if config.CheckpointerNamespace == "" {
+	config.CheckpointConfig.CheckpointerNamespace = os.Getenv("CHECKPOINTER_NAMESPACE")
+	if config.CheckpointConfig.CheckpointerNamespace == "" {
 		err = errors.Join(err, fmt.Errorf("CHECKPOINTER_NAMESPACE environment variable not set, should be set by Kubernetes"))
 	}
 
-	config.CheckpointerNode = os.Getenv("CHECKPOINTER_NODE")
-	if config.CheckpointerNode == "" {
+	config.CheckpointConfig.CheckpointerNode = os.Getenv("CHECKPOINTER_NODE")
+	if config.CheckpointConfig.CheckpointerNode == "" {
 		err = errors.Join(err, fmt.Errorf("CHECKPOINTER_NODE environment variable not set, should be set by Kubernetes"))
 	}
 
+	checkpointerNodeIP := os.Getenv("CHECKPOINTER_NODE_IP")
+	if checkpointerNodeIP == "" {
+		err = errors.Join(err, fmt.Errorf("CHECKPOINTER_NODE_IP environment variable not set, should be set by Kubernetes"))
+	}
+
 	if err != nil {
-		return CheckpointerConfig{}, err
+		return GlobalConfig{}, err
 	}
 
 	config.CheckpointerPort = getOrDefaultNonNegativeNumber("CHECKPOINTER_PORT", 3333)
-	config.KanikoTimoutSeconds = getOrDefaultNonNegativeNumber("KANIKO_TIMEOUT", 30)
+	config.CheckpointConfig.KanikoTimeoutSeconds = getOrDefaultNonNegativeNumber("KANIKO_TIMEOUT", 30)
+	kubeletPort := getOrDefaultNonNegativeNumber("KUBELET_PORT", 10250)
+	config.KubeletConfig.BaseUrl = fmt.Sprintf("https://%s:%d", checkpointerNodeIP, kubeletPort)
 
-	config.CheckpointBaseImage = getOrDefault("CHECKPOINT_BASE_IMAGE", "pbaran555/checkpoint-base")
-	config.KanikoSecretName = getOrDefault("KANIKO_SECRET_NAME", "kaniko-secret")
+	config.CheckpointConfig.CheckpointBaseImage = getOrDefault("CHECKPOINT_BASE_IMAGE", "pbaran555/checkpoint-base:latest")
+	config.CheckpointConfig.KanikoSecretName = getOrDefault("KANIKO_SECRET_NAME", "kaniko-secret")
 	config.StorageBasePath = getOrDefault("STORAGE_BASE_PATH", "/tmp/checkpointer")
-	config.KubeletCertFile = getOrDefault("KUBELET_CERT_FILE", "/etc/kubernetes/pki/apiserver-kubelet-client.crt")
-	config.KubeletKeyFile = getOrDefault("KUBELET_KEY_FILE", "/etc/kubernetes/pki/apiserver-kubelet-client.key")
-	config.KubeletBaseUrl = getOrDefault("KUBELET_BASE_URL", "https://localhost:10250")
+	config.KubeletConfig.CertFile = getOrDefault("KUBELET_CERT_FILE", "/etc/kubernetes/pki/apiserver-kubelet-client.crt")
+	config.KubeletConfig.KeyFile = getOrDefault("KUBELET_KEY_FILE", "/etc/kubernetes/pki/apiserver-kubelet-client.key")
 
-	if config.KubeletAllowInsecure = os.Getenv("KUBELET_ALLOW_INSECURE") == "true"; config.KubeletAllowInsecure {
+	if config.KubeletConfig.AllowInsecure = os.Getenv("KUBELET_ALLOW_INSECURE") == "true"; config.KubeletConfig.AllowInsecure {
 		log.Warn().Msg("KUBELET_ALLOW_INSECURE enabled, Checkpointer will not verify kubelet certificate")
 	}
 	if config.DisableRouteForward = os.Getenv("DISABLE_ROUTE_FORWARD") == "true"; config.DisableRouteForward {

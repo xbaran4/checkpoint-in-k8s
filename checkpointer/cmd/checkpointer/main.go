@@ -27,13 +27,13 @@ func main() {
 		log.Fatal().Err(err).Msg("failed to get Kubernetes clientset")
 	}
 
-	checkpointerConfig, err := config.LoadCheckpointerConfig()
+	globalConfig, err := config.LoadGlobalConfig()
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to bootstrap Checkpointer configuration")
 	}
 
 	// set plaintext logs for better dev experience
-	if checkpointerConfig.Environment == config.DevelopmentEnvironment {
+	if globalConfig.Environment == config.DevelopmentEnvironment {
 		zerolog.SetGlobalLevel(zerolog.DebugLevel)
 		log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stdout})
 	} else {
@@ -42,19 +42,24 @@ func main() {
 
 	mux := http.NewServeMux()
 
-	cp, err := checkpoint.NewCheckpointer(clientset, inClusterConfig, checkpointerConfig)
+	cp, err := checkpoint.NewCheckpointer(clientset, inClusterConfig, globalConfig)
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to create Checkpointer")
 	}
-	storage := manager.NewCheckpointStorage(checkpointerConfig)
+	storage := manager.NewCheckpointStorage(globalConfig)
 	mgr := manager.NewCheckpointManager(cp, storage)
 
-	ch := web.NewCheckpointHandler(mgr, checkpointerConfig.CheckpointerNode)
+	ch := web.NewCheckpointHandler(mgr, globalConfig.CheckpointConfig.CheckpointerNode)
 	var checkpointHandler http.Handler = http.HandlerFunc(ch.HandleCheckpoint)
 	var stateHandler http.Handler = http.HandlerFunc(ch.HandleCheckState)
 
-	if !checkpointerConfig.DisableRouteForward {
-		proxy := web.NewRouteProxyMiddleware(clientset, inClusterConfig, checkpointerConfig.CheckpointerNode, checkpointerConfig.CheckpointerPort)
+	if !globalConfig.DisableRouteForward {
+		proxy := web.NewRouteProxyMiddleware(
+			clientset,
+			inClusterConfig,
+			globalConfig.CheckpointConfig.CheckpointerNode,
+			globalConfig.CheckpointerPort,
+		)
 		checkpointHandler = proxy.CheckpointRouteProxyMiddleware(checkpointHandler)
 		stateHandler = proxy.StateRouteProxyMiddleware(stateHandler)
 	}
@@ -62,7 +67,7 @@ func main() {
 	mux.Handle("POST /checkpoint/{ns}/{pod}/{container}", checkpointHandler)
 	mux.Handle("GET /checkpoint", stateHandler)
 
-	portNumber := strconv.FormatInt(checkpointerConfig.CheckpointerPort, 10)
+	portNumber := strconv.FormatInt(globalConfig.CheckpointerPort, 10)
 	log.Info().Msg("starting http server on port: " + portNumber)
 	err = http.ListenAndServe(":"+portNumber, mux)
 
