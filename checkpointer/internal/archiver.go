@@ -3,6 +3,7 @@ package internal
 import (
 	"archive/tar"
 	"compress/gzip"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -38,10 +39,14 @@ func addFileToTar(tw *tar.Writer, actualFilepath, filenameInTar string) error {
 	return nil
 }
 
+// CreateTarGzTempFile creates gzip compressed tar archive in the system's temp directory.
+// The files which should be included in the archive are expected as keys in filesMapping map,
+// where the values define the filename inside the archive. All the files will be put to the root of the archive.
+// Returns filepath of the archive or error.
 func CreateTarGzTempFile(filesMapping map[string]string) (string, error) {
 	tmpTarFile, err := os.CreateTemp("", "build-context-*.tar.gz")
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to create a file in system's temp directory: %w", err)
 	}
 	defer tmpTarFile.Close()
 
@@ -54,7 +59,7 @@ func CreateTarGzTempFile(filesMapping map[string]string) (string, error) {
 	for actualFilepath, filenameInTar := range filesMapping {
 		if err := addFileToTar(tw, actualFilepath, filenameInTar); err != nil {
 			os.Remove(tmpTarFile.Name())
-			return "", err
+			return "", fmt.Errorf("failed to add %s to the compressed tar archive: %w", actualFilepath, err)
 		}
 	}
 
