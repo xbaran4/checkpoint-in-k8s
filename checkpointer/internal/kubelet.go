@@ -61,7 +61,7 @@ type kubeletController struct {
 	// Base URL of Kubelet used to send a checkpoint request.
 	kubeletBaseUrl string
 	// http client with appropriate certificate and key loaded
-	*http.Client
+	client *http.Client
 }
 
 func (kc kubeletController) CallKubeletCheckpoint(ctx context.Context, containerPath string) (string, error) {
@@ -74,7 +74,7 @@ func (kc kubeletController) CallKubeletCheckpoint(ctx context.Context, container
 
 	zerolog.Ctx(ctx).Debug().Str("requestURL", requestURL).Msg("sending an HTTP request to kubelet")
 
-	res, err := kc.Client.Do(req)
+	res, err := kc.client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to send an http request: %w", err)
 	}

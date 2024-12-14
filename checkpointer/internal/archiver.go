@@ -43,6 +43,8 @@ func addFileToTar(tw *tar.Writer, actualFilepath, filenameInTar string) error {
 // The files which should be included in the archive are expected as keys in filesMapping map,
 // where the values define the filename inside the archive. All the files will be put to the root of the archive.
 // Returns filepath of the archive or error.
+//
+// It is the responsibility of the caller to remove the archive after use.
 func CreateTarGzTempFile(filesMapping map[string]string) (string, error) {
 	tmpTarFile, err := os.CreateTemp("", "build-context-*.tar.gz")
 	if err != nil {

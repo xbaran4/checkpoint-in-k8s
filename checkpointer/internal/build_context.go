@@ -7,9 +7,12 @@ import (
 	"path/filepath"
 )
 
-const parentBuildContextDir = "/tmp/build-contexts"
-
-func PrepareDir(checkpointTarFilepath, dockerfileFilepath string) (string, error) {
+// PrepareKanikoBuildContext copies dockerfileFilepath and files into newly generated subdirectory of
+// parentBuildContextDir directory. Additionally, dockerfileFilepath is renamed to 'Dockerfile'.
+// Returns path to the newly generated subdirectory or error.
+//
+// It is the responsibility of the caller to remove the directory after use.
+func PrepareKanikoBuildContext(parentBuildContextDir, checkpointTarFilepath, dockerfileFilepath string) (string, error) {
 	tempDir, err := os.MkdirTemp(parentBuildContextDir, "context-")
 	if err != nil {
 		fmt.Println("Error creating temporary directory:", err)

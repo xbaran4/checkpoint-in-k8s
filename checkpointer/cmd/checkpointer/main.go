@@ -6,14 +6,12 @@ import (
 	"checkpoint-in-k8s/pkg/manager"
 	"checkpoint-in-k8s/web"
 	"errors"
-	"github.com/rs/zerolog"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"strconv"
 
 	"github.com/rs/zerolog/log"
 	"net/http"
-	"os"
 )
 
 func main() {
@@ -30,14 +28,6 @@ func main() {
 	globalConfig, err := config.LoadGlobalConfig()
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to bootstrap Checkpointer configuration")
-	}
-
-	// set plaintext logs for better dev experience
-	if globalConfig.Environment == config.DevelopmentEnvironment {
-		zerolog.SetGlobalLevel(zerolog.DebugLevel)
-		log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stdout})
-	} else {
-		zerolog.SetGlobalLevel(zerolog.InfoLevel)
 	}
 
 	mux := http.NewServeMux()

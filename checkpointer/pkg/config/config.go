@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"os"
 	"strconv"
@@ -28,6 +29,7 @@ type CheckpointConfig struct {
 	CheckpointImagePrefix string
 	CheckpointBaseImage   string
 	KanikoSecretName      string
+	KanikoBuildContextDir string
 	KanikoTimeoutSeconds  int64
 }
 
@@ -41,9 +43,21 @@ type GlobalConfig struct {
 	Environment         Environment
 }
 
+// LoadGlobalConfig
 func LoadGlobalConfig() (GlobalConfig, error) {
 	var err error
 	config := GlobalConfig{}
+
+	if os.Getenv("ENVIRONMENT") == "prod" {
+		config.Environment = ProductionEnvironment
+		zerolog.SetGlobalLevel(zerolog.InfoLevel)
+	} else {
+		// set plaintext logs for better dev experience
+		config.Environment = DevelopmentEnvironment
+		zerolog.SetGlobalLevel(zerolog.DebugLevel)
+		log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stdout})
+		log.Info().Msg("assuming development environment, set ENVIRONMENT=prod to assume production")
+	}
 
 	config.CheckpointConfig.CheckpointImagePrefix = os.Getenv("CHECKPOINT_IMAGE_PREFIX")
 	if config.CheckpointConfig.CheckpointImagePrefix == "" {
@@ -88,15 +102,8 @@ func LoadGlobalConfig() (GlobalConfig, error) {
 	}
 	if config.UseKanikoFS = os.Getenv("USE_KANIKO_FS") == "true"; config.UseKanikoFS {
 		log.Info().Msg("USE_KANIKO_FS enabled, make sure Checkpointer has appropriate volume mounts")
+		config.CheckpointConfig.KanikoBuildContextDir = getOrDefault("KANIKO_BUILD_CTX_DIR", "/tmp/build-contexts")
 	}
-
-	if os.Getenv("ENVIRONMENT") == "prod" {
-		config.Environment = ProductionEnvironment
-	} else {
-		config.Environment = DevelopmentEnvironment
-		log.Info().Msg("assuming development environment")
-	}
-
 	return config, nil
 }
 

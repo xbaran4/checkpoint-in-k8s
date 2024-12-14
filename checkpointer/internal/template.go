@@ -12,28 +12,36 @@ type checkpointDockerfile struct {
 	CheckpointBaseImage string
 }
 
-// This name is tied to the template file in ./templates and in Dockerfile.
-// In case of change, these should not be forgotten about.
-const templateFilename = "dockerfile.tmpl"
+func NewDockerfileFactory(templateFile string) (DockerfileFactory, error) {
+	dockerfileTemplate, err := template.New(filepath.Base(templateFile)).ParseFiles(templateFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse a template file for Dockerfile: %w", err)
+	}
+	return dockerfileFactory{
+		dockerfileTemplate,
+	}, nil
+}
 
-// DockerfileFromTemplate creates a Dockerfile in the system's temp directory. The Dockerfile is created based on a
-// template file located in templates/dockerfile.tmpl but is in working directory of Checkpointer image.
-// checkpointBaseImage is used in Dockerfile's FROM command and checkpointTarName in the ADD command.
-// Returns the name of the created Dockerfile or error.
-func DockerfileFromTemplate(checkpointBaseImage, checkpointTarName string) (string, error) {
+type DockerfileFactory interface {
+	// DockerfileFromTemplate creates a Dockerfile in the system's temp directory. The Dockerfile is created based on a
+	// template file located in templates/dockerfile.tmpl but is in working directory of Checkpointer image.
+	// checkpointBaseImage is used in Dockerfile's FROM command and checkpointTarName in the ADD command.
+	// Returns the name of the created Dockerfile or error.
+	DockerfileFromTemplate(checkpointBaseImage, checkpointTarName string) (string, error)
+}
+
+type dockerfileFactory struct {
+	template *template.Template
+}
+
+func (df dockerfileFactory) DockerfileFromTemplate(checkpointBaseImage, checkpointTarName string) (string, error) {
 	filledTemplate, err := os.CreateTemp("", "dockerfile-*")
 	if err != nil {
 		return "", fmt.Errorf("failed to create a file in system's temp directory: %w", err)
 	}
 	defer filledTemplate.Close()
 
-	templateFile, err := template.New(templateFilename).ParseFiles(templateFilename)
-	if err != nil {
-		os.Remove(filledTemplate.Name())
-		return "", fmt.Errorf("failed to parse a template file for Dockerfile: %w", err)
-	}
-
-	err = templateFile.Execute(filledTemplate,
+	err = df.template.Execute(filledTemplate,
 		checkpointDockerfile{
 			filepath.Base(checkpointTarName),
 			checkpointBaseImage,
