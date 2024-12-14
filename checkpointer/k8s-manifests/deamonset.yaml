@@ -45,8 +45,13 @@ spec:
           volumeMounts:
             - name: checkpoints-tar-dir
               mountPath: /var/lib/kubelet/checkpoints
-            - name: build-contexts-dir
-              mountPath: /tmp/build-contexts
+            ## Uncomment when using Kaniko File system strategy so that Checkpointer can share build context with Kaniko.
+#            - name: build-contexts-dir
+#              mountPath: /tmp/build-contexts
+
+            ## Uncomment to preserve checkpoint results across Checkpointer restarts.
+#            - name: storage-dir
+#              mountPath: /checkpointer/storage
             - name: kubelet-tls-secret
               mountPath: /etc/kubernetes/tls
               readOnly: true
@@ -54,10 +59,17 @@ spec:
         - name: checkpoints-tar-dir
           hostPath:
             path: /var/lib/kubelet/checkpoints
-        - name: build-contexts-dir
-          hostPath:
-            type: DirectoryOrCreate
-            path: /tmp/build-contexts
+         ## Uncomment when using Kaniko File system strategy so that Checkpointer can share build context with Kaniko.
+#        - name: build-contexts-dir ### Can be uncommented to in case using
+#          hostPath:
+#            type: DirectoryOrCreate
+#            path: /tmp/checkpointer/build-contexts
+
+        ## Uncomment to preserve checkpoint results across Checkpointer restarts.
+#        - name: storage-dir
+#          hostPath:
+#            type: DirectoryOrCreate
+#            path: /tmp/checkpointer/storage
         - name: kubelet-tls-secret
           secret:
             secretName: kubelet-tls-secret

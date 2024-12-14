@@ -123,7 +123,7 @@ func LoadGlobalConfig() (GlobalConfig, error) {
 	config.DockerfileTemplateFile = os.Getenv("DOCKERFILE_TMPL_FILE")
 	if config.DockerfileTemplateFile == "" {
 		err = errors.Join(err, fmt.Errorf("DOCKERFILE_TMPL_FILE environment variable not set,"+
-			" should be set within Checkpointer container image, this is likely a build problem"))
+			" should be set within Checkpointer Dockerfile, this is likely a build problem"))
 	}
 
 	if err != nil {
@@ -135,11 +135,11 @@ func LoadGlobalConfig() (GlobalConfig, error) {
 	kubeletPort := getOrDefaultNonNegativeNumber("KUBELET_PORT", 10250)
 	config.KubeletConfig.BaseUrl = fmt.Sprintf("https://%s:%d", checkpointerNodeIP, kubeletPort)
 
-	config.CheckpointConfig.CheckpointBaseImage = getOrDefault("CHECKPOINT_BASE_IMAGE", "pbaran555/checkpoint-base:latest")
+	config.CheckpointConfig.CheckpointBaseImage = getOrDefault("CHECKPOINT_BASE_IMAGE", "pbaran555/checkpoint-base:1.0.0")
 	config.CheckpointConfig.KanikoSecretName = getOrDefault("KANIKO_SECRET_NAME", "kaniko-secret")
-	config.StorageBasePath = getOrDefault("STORAGE_BASE_PATH", "/tmp/checkpointer")
-	config.KubeletConfig.CertFile = getOrDefault("KUBELET_CERT_FILE", "/etc/kubernetes/pki/apiserver-kubelet-client.crt")
-	config.KubeletConfig.KeyFile = getOrDefault("KUBELET_KEY_FILE", "/etc/kubernetes/pki/apiserver-kubelet-client.key")
+	config.StorageBasePath = getOrDefault("STORAGE_BASE_PATH", "/checkpointer/storage")
+	config.KubeletConfig.CertFile = getOrDefault("KUBELET_CERT_FILE", "/etc/kubernetes/tls/tls.crt")
+	config.KubeletConfig.KeyFile = getOrDefault("KUBELET_KEY_FILE", "/etc/kubernetes/tls/tls.key")
 
 	if config.KubeletConfig.AllowInsecure = os.Getenv("KUBELET_ALLOW_INSECURE") == "true"; config.KubeletConfig.AllowInsecure {
 		log.Warn().Msg("KUBELET_ALLOW_INSECURE enabled, Checkpointer will not verify kubelet certificate")

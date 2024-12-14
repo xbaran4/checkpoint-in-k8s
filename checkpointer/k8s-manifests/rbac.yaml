@@ -12,7 +12,7 @@ rules:
   - apiGroups: [""]
     resources: ["pods"]
     verbs: ["get", "list", "delete"]
-  - apiGroups: [""]
+  - apiGroups: [""] # Can be omitted if using Kaniko stdin strategy.
     resources: ["pods/attach"]
     verbs: ["create"]
 ---
