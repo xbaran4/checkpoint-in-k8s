@@ -7,6 +7,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"os"
 	"strconv"
+	"strings"
 )
 
 type Environment uint8
@@ -105,11 +106,6 @@ func LoadGlobalConfig() (GlobalConfig, error) {
 		err = errors.Join(err, fmt.Errorf("CHECKPOINT_IMAGE_PREFIX environment variable not set, example: 'quay.io/pbaran/checkpointed'"))
 	}
 
-	config.CheckpointConfig.CheckpointerNamespace = os.Getenv("CHECKPOINTER_NAMESPACE")
-	if config.CheckpointConfig.CheckpointerNamespace == "" {
-		err = errors.Join(err, fmt.Errorf("CHECKPOINTER_NAMESPACE environment variable not set, should be set by Kubernetes"))
-	}
-
 	config.CheckpointConfig.CheckpointerNode = os.Getenv("CHECKPOINTER_NODE")
 	if config.CheckpointConfig.CheckpointerNode == "" {
 		err = errors.Join(err, fmt.Errorf("CHECKPOINTER_NODE environment variable not set, should be set by Kubernetes"))
@@ -125,6 +121,12 @@ func LoadGlobalConfig() (GlobalConfig, error) {
 		err = errors.Join(err, fmt.Errorf("DOCKERFILE_TMPL_FILE environment variable not set,"+
 			" should be set within Checkpointer Dockerfile, this is likely a build problem"))
 	}
+
+	namespace, namespaceErr := readNamespace()
+	if namespaceErr != nil {
+		err = errors.Join(err, namespaceErr)
+	}
+	config.CheckpointConfig.CheckpointerNamespace = namespace
 
 	if err != nil {
 		return GlobalConfig{}, err
@@ -176,4 +178,19 @@ func getOrDefaultNonNegativeNumber(env string, defaultVal int64) int64 {
 	}
 
 	return number
+}
+
+func readNamespace() (string, error) {
+	namespaceFilePath := "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
+
+	fileContent, err := os.ReadFile(namespaceFilePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read file containing Kubernetes namespace %s: %w", namespaceFilePath, err)
+	}
+	namespace := strings.TrimSpace(string(fileContent))
+
+	if namespace == "" {
+		return "", fmt.Errorf("file containing Kubernetes namespacee %s is empty", namespaceFilePath)
+	}
+	return namespace, nil
 }
