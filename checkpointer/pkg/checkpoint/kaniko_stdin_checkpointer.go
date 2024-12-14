@@ -14,18 +14,30 @@ import (
 
 const kanikoContainerName = "kaniko"
 
+// kanikoStdinCheckpointer represents the Kaniko Stdin strategy of checkpointing.
 type kanikoStdinCheckpointer struct {
-	*internal.PodController
-	kubeletController internal.KubeletController
+
+	// PodController is used to manipulate with Kubernetes Pods.
+	internal.PodController
+
+	// KubeletController is used to request checkpoint from Kubelet.
+	internal.KubeletController
+
+	// DockerfileFactory is used to generate Dockerfile for checkpoint image.
+	internal.DockerfileFactory
+
+	// CheckpointConfig contains configuration settings influencing checkpointing.
 	config.CheckpointConfig
 }
 
-func newKanikoStdinCheckpointer(podController *internal.PodController,
+func newKanikoStdinCheckpointer(podController internal.PodController,
 	kubeletController internal.KubeletController,
+	dockerfileFactory internal.DockerfileFactory,
 	checkpointConfig config.CheckpointConfig) Checkpointer {
 	return &kanikoStdinCheckpointer{
 		podController,
 		kubeletController,
+		dockerfileFactory,
 		checkpointConfig,
 	}
 }
@@ -42,14 +54,14 @@ func (cp *kanikoStdinCheckpointer) Checkpoint(ctx context.Context, params Checkp
 	defer cp.DeletePod(context.WithoutCancel(ctx), cp.CheckpointerNamespace, kanikoPodName)
 
 	lg.Debug().Msg("calling Kubelet checkpointer")
-	checkpointTarName, err := cp.kubeletController.CallKubeletCheckpoint(ctx, params.ContainerIdentifier.String())
+	checkpointTarName, err := cp.CallKubeletCheckpoint(ctx, params.ContainerIdentifier.String())
 	if err != nil {
 		return "", fmt.Errorf("could not checkpointer container: %s with error %w", params.ContainerIdentifier, err)
 	}
 	defer os.Remove(checkpointTarName)
 	lg.Debug().Str("tarName", checkpointTarName).Msg("successfully created checkpointer tar")
 
-	filledDockerfileTemplate, err := internal.DockerfileFromTemplate(cp.CheckpointBaseImage, checkpointTarName)
+	filledDockerfileTemplate, err := cp.DockerfileFromTemplate(cp.CheckpointBaseImage, checkpointTarName)
 	if err != nil {
 		return "", fmt.Errorf("could not create checkpointer container: %s with error %w", params.ContainerIdentifier, err)
 	}
@@ -67,23 +79,27 @@ func (cp *kanikoStdinCheckpointer) Checkpoint(ctx context.Context, params Checkp
 	defer os.Remove(buildContextTar)
 	lg.Debug().Msg("successfully built tar.gz with build context")
 
-	if err = cp.AttachAndStreamToPod(ctx,
+	buildContextOpened, err := os.Open(buildContextTar)
+	if err != nil {
+		return "", fmt.Errorf("could not open build context tar archive with error %w", err)
+	}
+	defer buildContextOpened.Close()
+
+	if err = cp.AttachAndStreamToContainer(ctx,
 		kanikoContainerName,
 		kanikoPodName,
 		cp.CheckpointerNamespace,
-		buildContextTar,
+		buildContextOpened,
 		time.Second*time.Duration(cp.KanikoTimeoutSeconds),
 	); err != nil {
 		return "", fmt.Errorf("failed to attach to pod: %w", err)
 	}
 
 	if params.DeletePod {
-		defer func() {
-			if err := cp.DeletePod(ctx, params.ContainerIdentifier.Namespace, params.ContainerIdentifier.Pod); err != nil {
-				lg.Warn().Err(err).Msg("could not delete checkpointed pod")
-			}
-			lg.Debug().Msg("successfully deleted checkpointed Pod")
-		}()
+		if err := cp.DeleteAndWaitForRemoval(ctx, params.ContainerIdentifier.Namespace, params.ContainerIdentifier.Pod, time.Second*10); err != nil {
+			lg.Warn().Err(err).Msg("could not delete checkpointed pod") // Do not fail if we cannot delete the Pod.
+		}
+		lg.Debug().Msg("successfully deleted checkpointed Pod")
 	}
 
 	lg.Debug().Msg("checkpointing done, about to cleanup resources")

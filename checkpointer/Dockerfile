@@ -14,9 +14,8 @@ WORKDIR /checkpointer-app
 COPY internal/templates/dockerfile.tmpl ./dockerfile.tmpl
 COPY --from=builder /checkpointer ./checkpointer
 
-ENV KUBELET_PORT="10250"
-ENV KUBELET_CERT_FILE="/etc/kubernetes/pki/apiserver-kubelet-client.crt"
-ENV KUBELET_CERT_KEY="/etc/kubernetes/pki/apiserver-kubelet-client.key"
+# This env should match the location where the template file is copied to withing the WORKDIR.
+ENV DOCKERFILE_TMPL_FILE="dockerfile.tmpl"
 
 EXPOSE 3333
 

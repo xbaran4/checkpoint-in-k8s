@@ -9,10 +9,7 @@ import (
 	"k8s.io/client-go/rest"
 )
 
-// This name is tied to the template file in ./templates and in Dockerfile.
-// In case of change, these should not be forgotten about.
-const templateFilename = "dockerfile.tmpl"
-
+// CheckpointerParams represents the parameters for checkpointing.
 type CheckpointerParams struct {
 
 	// ContainerIdentifier represents the container to be checkpointed.
@@ -39,7 +36,7 @@ func NewCheckpointer(client *kubernetes.Clientset, config *rest.Config, globalCo
 		return nil, fmt.Errorf("failed to create Kubelet controller; %w", err)
 	}
 
-	dockerfileFactory, err := internal.NewDockerfileFactory(templateFilename)
+	dockerfileFactory, err := internal.NewDockerfileFactory(globalConfig.DockerfileTemplateFile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Dockerfile factory; %w", err)
 	}

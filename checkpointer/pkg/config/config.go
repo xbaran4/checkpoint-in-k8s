@@ -16,34 +16,75 @@ const (
 	DevelopmentEnvironment
 )
 
+// KubeletConfig represents configuration related to Kubelet.
 type KubeletConfig struct {
-	CertFile      string
-	KeyFile       string
-	BaseUrl       string
+
+	// CertFile is path to a file with TLS certificate used to authenticate to Kubelet.
+	CertFile string
+
+	// KeyFile is path to a file with private key related to the certificate used to authenticate to Kubelet.
+	KeyFile string
+
+	// BaseUrl is a URL Kubelet is listening on with protocol, domain name/IP and port, e.g.: https://142.168.1.1:10250
+	BaseUrl string
+
+	// Checkpointer will not verify Kubelet TLS certificate if AllowInsecure is set to true.
 	AllowInsecure bool
 }
 
+// CheckpointConfig represents configuration related to checkpointing.
 type CheckpointConfig struct {
+
+	// CheckpointerNamespace represents the Kubernetes Namespace that Checkpointer is running in.
 	CheckpointerNamespace string
-	CheckpointerNode      string
+
+	// CheckpointerNode represents the name of Kubernetes Node that Checkpointer is running on.
+	CheckpointerNode string
+
+	// CheckpointImagePrefix represents container image name without the tag as: { CheckpointImagePrefix }:tag.
 	CheckpointImagePrefix string
-	CheckpointBaseImage   string
-	KanikoSecretName      string
+
+	// CheckpointBaseImage will be used as base image in checkpoint Dockerfile as: FROM { CheckpointBaseImage }.
+	CheckpointBaseImage string
+
+	// KanikoSecretName represents the name of Kubernetes Secret containing credentials for Kaniko to push container
+	// image to a container registry.
+	KanikoSecretName string
+
+	// KanikoBuildContextDir defines path to a directory where Checkpointer will prepare build context for Kaniko Pod.
 	KanikoBuildContextDir string
-	KanikoTimeoutSeconds  int64
+
+	// KanikoTimeoutSeconds represent time in seconds after which Checkpointer will stop waiting for Kaniko Pod to
+	// reach a certain Pod phase.
+	KanikoTimeoutSeconds int64
 }
 
+// GlobalConfig represents the whole configuration of Checkpointer.
 type GlobalConfig struct {
-	CheckpointConfig    CheckpointConfig
-	KubeletConfig       KubeletConfig
-	StorageBasePath     string
-	CheckpointerPort    int64
+	CheckpointConfig CheckpointConfig
+	KubeletConfig    KubeletConfig
+
+	// StorageBasePath defines path to a directory where Checkpointer will store checkpoint results.
+	StorageBasePath string
+
+	// DockerfileTemplateFile defines path to a file with Dockerfile template used for checkpoint container image.
+	DockerfileTemplateFile string
+
+	// CheckpointerPort defines on what port Checkpointer will listen on.
+	CheckpointerPort int64
+
+	// DisableRouteForward will disable RouteProxy middleware if set to true.
 	DisableRouteForward bool
-	UseKanikoFS         bool
-	Environment         Environment
+
+	// If UseKanikoFS is true, Checkpointer will use Kaniko File system strategy to transfer build context to Kaniko Pod.
+	UseKanikoFS bool
+
+	// Environment defines what environment Checkpointer is running in: prod/dev, possibly more in the future.
+	Environment Environment
 }
 
-// LoadGlobalConfig
+// LoadGlobalConfig loads the whole configuration for Checkpointer. It will use defaults where possible, but if there
+// are required environment variables missing, it will return error with all the missing variables.
 func LoadGlobalConfig() (GlobalConfig, error) {
 	var err error
 	config := GlobalConfig{}
@@ -77,6 +118,12 @@ func LoadGlobalConfig() (GlobalConfig, error) {
 	checkpointerNodeIP := os.Getenv("CHECKPOINTER_NODE_IP")
 	if checkpointerNodeIP == "" {
 		err = errors.Join(err, fmt.Errorf("CHECKPOINTER_NODE_IP environment variable not set, should be set by Kubernetes"))
+	}
+
+	config.DockerfileTemplateFile = os.Getenv("DOCKERFILE_TMPL_FILE")
+	if config.DockerfileTemplateFile == "" {
+		err = errors.Join(err, fmt.Errorf("DOCKERFILE_TMPL_FILE environment variable not set,"+
+			" should be set within Checkpointer container image, this is likely a build problem"))
 	}
 
 	if err != nil {

@@ -12,15 +12,17 @@ import (
 	"net/url"
 )
 
+const checkpointerLabelSelector = "app.kubernetes.io/name=checkpointer"
+
 type ProxyCheckpointHandler struct {
-	podController    *internal.PodController
-	checkpointerNode string
-	checkpointerPort int64
+	nodePodController internal.NodePodController
+	checkpointerNode  string
+	checkpointerPort  int64
 }
 
 func NewRouteProxyMiddleware(client *kubernetes.Clientset, config *rest.Config, checkpointerNode string, checkpointerPort int64) *ProxyCheckpointHandler {
 	return &ProxyCheckpointHandler{
-		internal.NewPodController(client, config),
+		internal.NewNodePodController(client, config),
 		checkpointerNode,
 		checkpointerPort,
 	}
@@ -39,7 +41,7 @@ func (proxy *ProxyCheckpointHandler) CheckpointRouteProxyMiddleware(next http.Ha
 
 		lg.Debug().Msg("looking for a Node on which the container is running on")
 
-		podsNodeName, err := proxy.podController.GetNodeOfPod(req.Context(), containerIdentifier.Pod, containerIdentifier.Namespace)
+		podsNodeName, err := proxy.nodePodController.GetNodeOfPod(req.Context(), containerIdentifier.Pod, containerIdentifier.Namespace)
 		if err != nil {
 			lg.Error().Err(err).Msg("error getting Pod's Node name")
 			http.Error(rw, fmt.Sprintf("failed while looking for Node name of a Pod: %s", err), http.StatusInternalServerError)
@@ -77,7 +79,7 @@ func (proxy *ProxyCheckpointHandler) findCheckpointerAndForward(rw http.Response
 	}
 
 	lg.Info().Msg("request is meant for another checkpointer, looking for it")
-	maybeIp, err := proxy.podController.GetPodIPForNode(req.Context(), node)
+	maybeIp, err := proxy.nodePodController.GetPodIPForNode(req.Context(), node, checkpointerLabelSelector)
 	if err != nil {
 		lg.Error().Err(err).Msg("error getting Pod's IP address")
 		http.Error(rw, fmt.Sprintf("failed while looking for a Pod to forward the request to %s", err), http.StatusInternalServerError)
