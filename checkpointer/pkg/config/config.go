@@ -151,7 +151,7 @@ func LoadGlobalConfig() (GlobalConfig, error) {
 	}
 	if config.UseKanikoFS = os.Getenv("USE_KANIKO_FS") == "true"; config.UseKanikoFS {
 		log.Info().Msg("USE_KANIKO_FS enabled, make sure Checkpointer has appropriate volume mounts")
-		config.CheckpointConfig.KanikoBuildContextDir = getOrDefault("KANIKO_BUILD_CTX_DIR", "/tmp/build-contexts")
+		config.CheckpointConfig.KanikoBuildContextDir = getOrDefault("KANIKO_BUILD_CTX_DIR", "/tmp/checkpointer/build-contexts")
 	}
 	return config, nil
 }

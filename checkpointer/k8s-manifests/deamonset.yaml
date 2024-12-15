@@ -40,10 +40,15 @@ spec:
               memory: 200Mi
           volumeMounts:
             - name: checkpoints-tar-dir
+              ## Currently, the mountPath has to match the hostPath otherwise there would have to be
+              ## translation function from Kubelet FS to Checkpointer FS.
+              ## The constraint can be removed in the future.
               mountPath: /var/lib/kubelet/checkpoints
-            ## Uncomment when using Kaniko File system strategy so that Checkpointer can share build context with Kaniko.
+            ## Uncomment when using Kaniko File system strategy (USE_KANIKO_FS=true), so that Checkpointer can share build context with Kaniko.
+            ## Currently, the mountPath has to match the hostPath and the KANIKO_BUILD_CTX_DIR env variable.
+            ## The constraint can be removed in the future.
 #            - name: build-contexts-dir
-#              mountPath: /tmp/build-contexts
+#              mountPath: /tmp/checkpointer/build-contexts
 
             ## Uncomment to preserve checkpoint results across Checkpointer restarts.
 #            - name: storage-dir
@@ -56,7 +61,7 @@ spec:
           hostPath:
             path: /var/lib/kubelet/checkpoints
          ## Uncomment when using Kaniko File system strategy so that Checkpointer can share build context with Kaniko.
-#        - name: build-contexts-dir ### Can be uncommented to in case using
+#        - name: build-contexts-dir
 #          hostPath:
 #            type: DirectoryOrCreate
 #            path: /tmp/checkpointer/build-contexts

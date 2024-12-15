@@ -61,6 +61,7 @@ func (cp *kanikoFSCheckpointer) Checkpoint(ctx context.Context, params Checkpoin
 		return "", fmt.Errorf("could not create checkpointer container: %s with error %w", params.ContainerIdentifier, err)
 	}
 	defer os.RemoveAll(buildContextDir)
+	lg.Debug().Str("buildContextDir", buildContextDir).Msg("successfully prepared build context for Kaniko")
 
 	kanikoPodName, err := cp.CreatePod(ctx, cp.getKanikoManifest(checkpointImageName, buildContextDir), cp.CheckpointerNamespace)
 	if err != nil {
@@ -70,7 +71,7 @@ func (cp *kanikoFSCheckpointer) Checkpoint(ctx context.Context, params Checkpoin
 
 	err = cp.WaitForPodSucceeded(ctx, kanikoPodName, cp.CheckpointerNamespace, time.Second*time.Duration(cp.KanikoTimeoutSeconds))
 	if err != nil {
-		return "", fmt.Errorf("timed out waiting for Pod to complete: %w", err)
+		return "", fmt.Errorf("failed while waiting for Kaniko Pod to reach Succeeded phase: %w", err)
 	}
 
 	if params.DeletePod {
@@ -101,8 +102,6 @@ func (cp *kanikoFSCheckpointer) getKanikoManifest(checkpointImageName, buildCont
 						"--context=dir:///kaniko-build-context",
 						"--destination=" + checkpointImageName,
 					},
-					Stdin:     true,
-					StdinOnce: true,
 					VolumeMounts: []v1.VolumeMount{
 						{
 							Name:      "kaniko-secret",
