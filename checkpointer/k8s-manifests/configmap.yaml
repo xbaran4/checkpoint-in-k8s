@@ -6,4 +6,3 @@ metadata:
 data:
   KUBELET_ALLOW_INSECURE: "true" # Remove in case kubelet is serving a valid certificate (not self-signed)
   CHECKPOINT_IMAGE_PREFIX: "pbaran555/kaniko-checkpointed"
-  # DISABLE_ROUTE_FORWARD: "true" # uncomment to disable routing to specific node (for single-Node cluster)
