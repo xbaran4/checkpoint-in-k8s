@@ -41,9 +41,11 @@ func (ch *CheckpointHandler) HandleCheckpoint(rw http.ResponseWriter, req *http.
 	}
 
 	var requestBody CheckpointRequestBody
-	if err := json.Unmarshal(body, &requestBody); err != nil {
-		http.Error(rw, fmt.Sprintf("Invalid JSON format: %s", err), http.StatusBadRequest)
-		return
+	if len(body) != 0 {
+		if err := json.Unmarshal(body, &requestBody); err != nil {
+			http.Error(rw, fmt.Sprintf("Invalid JSON format: %s", err), http.StatusBadRequest)
+			return
+		}
 	}
 
 	containerIdentifier := getContainerIdentifier(req)
