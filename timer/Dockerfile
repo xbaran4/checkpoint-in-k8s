@@ -1,8 +1,9 @@
-FROM golang:1.18-alpine
+FROM --platform=linux/amd64 golang:1.22-alpine
 
 WORKDIR /app
 
-RUN apk add --no-cache strace
+# installing strace and using it can help debug checkpoint/restore failures
+# RUN apk add --no-cache strace
 
 COPY ./timer.go .
 
