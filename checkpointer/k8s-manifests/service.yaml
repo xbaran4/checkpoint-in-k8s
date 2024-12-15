@@ -4,8 +4,6 @@ metadata:
   name: checkpoint-service
   namespace: kube-system
 spec:
-# Uncomment to expose the service outside the cluster.
-#  type: NodePort
   selector:
     app.kubernetes.io/name: checkpointer
   ports:

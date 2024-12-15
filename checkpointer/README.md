@@ -58,7 +58,10 @@ kubectl create configmap -nkube-system checkpointer-config-2 \
 You can omit `KUBELET_ALLOW_INSECURE` in case your Kubelet is not using self-signed certificate. 
 
 With this configuration Checkpointer will push images to `CHECKPOINT_IMAGE_PREFIX` repository with random
-(hex encoded bytes) tag suffix, e.g.: `pbaran555/kaniko-checkpointed:618c816e64b57705`
+(hex encoded bytes) tag suffix, e.g.: `pbaran555/kaniko-checkpointed:618c816e64b57705`.
+
+See [Configuration](#Configuration) section for more information
+
 
 With the Secrets and ConfigMap created, the rest of the manifest can be created as well:
 ```shell
@@ -76,20 +79,96 @@ kubectl delete -f k8s-manifests
 ```
 
 
-## Making a checkpoint request
+## Usage
+
+By default, the `checkpoint-service` is of type ClusterIP and does not expose Checkpointer outside the cluster.
+To expose it, run:
 ```shell
-curl "http://localhost:3333/checkpoint/default/timer-sleep/timer" \
---header "Content-Type: application/json" \
---data '{"deletePod": true}' \
+kubectl port-forward -nkube-system service/checkpoint-service 8000:80
+```
+Checkpoint HTTP API can now be reached through `http://localhost:8000`.
+
+See [Timer's README.md](../timer/README.md) on how you can create a testing container.
+
+
+### Checkpointing a container
+
+Checkpointing a container can be requested through:
+```
+HTTP POST /checkpoint/{namespace}/{pod}/{container}
+```
+Checkpointer expects a JSON input body with two boolean options: `deletePod` and `async`. Not including any body is the
+same as including:
+```json
+{
+  "deletePod": false,
+  "async": false
+}
+```
+The `deletePod` tells Checkpointer to delete the container's Pod after checkpointing. The `async` options defines if
+checkpointing will be asynchronous. If checkpointing is synchronous Checkpointer will respond to the HTTP request only
+after the checkpointing completed (un)successfully. On the other hand, Checkpointer will respond to the HTTP request
+immediately with a `checkpointIdentifier`, a string which can be used to obtain the result of checkpointing at a later
+time.
+
+#### Synchronous checkpointing
+To request a synchronous checkpointing which does not delete the Pod, run:
+```shell
+curl -X POST "http://localhost:8000/checkpoint/default/timer-sleep/timer" --verbose
+```
+On success, Checkpointer will respond with `HTTP 201 Created` and JSON body similar to:
+```json
+{
+  "containerIdentifier": {
+    "namespace": "default",
+    "pod": "timer-sleep",
+    "container": "timer"
+  },
+  "beginTimestamp": 1734281060,
+  "endTimestamp": 1734281084,
+  "containerImageName": "pbaran555/kaniko-checkpointed:138248b8f5936ca3"
+}
+```
+Checkpointer might also respond with `HTTP 404 Not Found` if the container does not exist or
+`HTTP 500 Internal Server Error` if there was an error during checkpointing. In this case Checkpointer will
+respond with plain text body.
+
+
+#### Asynchronous checkpointing
+
+To request an asynchronous checkpointing and delete the Pod afterward, run:
+```shell
+curl "http://localhost:8000/checkpoint/default/timer-sleep/timer" \
+--data '{"deletePod": true, "async": true}' \
 --verbose
 ```
+Checkpointer will respond with `HTTP 202 Accepted` and a JSON body similar to:
+```json
+{"checkpointIdentifier":"containerd-control-plane:b2c79a5bd8520ab5"}
+```
+To get the actual checkpoint result, use the following endpoint.
 
-## Checking checkpoint state
-```shell
-curl "http://localhost:3333/checkpoint?checkpointIdentifier=..." --verbose
+### Getting checkpoint result
+
+The result of checkpointing can be requested through:
+```
+HTTP GET /checkpoint?checkpointIdentifier={checkpointIdentifier}
 ```
 
+For example:
+```shell
+curl "http://localhost:8000/checkpoint?checkpointIdentifier=containerd-control-plane:b2c79a5bd8520ab5" --verbose
+```
+Checkpointer will respond with `HTTP 200 OK` and a JSON body equal to the synchronous checkpoint response.
+In case checkpointing in the background failed, Checkpointer will respond with `HTTP 500 Internal Server Error`
+and a plaintext message. If Checkpointer does not recognize the `checkpointIdentifier` it will
+return `HTTP 404 Not Found`.
+
+
+
 ## Configuration
+
+The following table provides a summary of all environment variables Checkpointer consumes for configuration:
 
 | Name                      | Required | Default                           | Example                       | Description                                                                                                                        |
 |---------------------------|----------|-----------------------------------|-------------------------------|------------------------------------------------------------------------------------------------------------------------------------|
