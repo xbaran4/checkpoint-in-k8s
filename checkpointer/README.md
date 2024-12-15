@@ -1,14 +1,23 @@
 # Checkpointer microservice
 
-## Build
+Checkpointer runs as single Pod on each Kubernetes Node. Exposes HTTP API to checkpoint a container in the cluster.
+
+## Building
+There is no point in building just the Checkpointer binary as Checkpointer is meant to run as a container within
+Kubernetes cluster.
+
+To build a Checkpointer container, run:
 ```shell
-docker build -t pbaran555/checkpointer .
+docker build -t pbaran555/checkpointer:1.0.0 . # replace with custom image name
 ```
 
-## Push
+To push the container image to a remote registry, run:
 ```shell
-docker push pbaran555/checkpointer
+docker push pbaran555/checkpointer:1.0.0 # replace with custom image name
 ```
+
+## Deploying
+
 
 ## Making a checkpoint request
 ```shell
@@ -20,8 +29,7 @@ curl "http://localhost:3333/checkpoint/default/timer-sleep/timer" \
 
 ## Checking checkpoint state
 ```shell
-curl "http://localhost:3333/checkpoint?checkpointIdentifier=..." \
---verbose
+curl "http://localhost:3333/checkpoint?checkpointIdentifier=..." --verbose
 ```
 
 ## Configuration

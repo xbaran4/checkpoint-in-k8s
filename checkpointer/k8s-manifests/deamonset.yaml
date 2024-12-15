@@ -15,7 +15,7 @@ spec:
       serviceAccountName: pod-api-access
       containers:
         - name: checkpointer
-          image: pbaran555/checkpointer:latest
+          image: pbaran555/checkpointer:1.0.0
           imagePullPolicy: Always
           ports:
             - containerPort: 3333
