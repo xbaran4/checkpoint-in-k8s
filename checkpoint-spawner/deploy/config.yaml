@@ -2,26 +2,25 @@
 
 singleuser:
   cmd:
-    - "jupyterhub-singleuser"
-    - "--NotebookNotary.db_file=':memory:'"
-  memory:
-    limit: 1G
-    guarantee: 1G
+    - "jupyterhub-singleuser"               # Jupyter Notebook signs notebooks and stores the signatures in sqlite DB file.
+    - "--NotebookNotary.db_file=':memory:'" # This options tell it to have the DB in memory, which an issues that upon, restore
+  memory:                                   # Jupyter Notebook would fail to open the saved notebooks,
+    limit: 500M
+    guarantee: 500M
   storage:
-    type: none
+    type: none # allows deploying the Jupyter Notebook containers without PersistentVolume
   image:
     name: quay.io/jupyter/base-notebook
     tag: latest
 hub:
   image:
     pullPolicy: Always
-    name: "pbaran555/hub-checkpointer"
-    tag: "0.0.1"
+    name: "pbaran555/hub-checkpoint-spawner" # a container which has access to CheckpointSpawner is set
+    tag: "1.0.0"
   db:
-    type: "sqlite-memory"
+    type: "sqlite-memory" # allows deploying the Hub container without PersistentVolume
   config:
     JupyterHub:
-      spawner_class: "checkpointer-spawner.CheckpointSpawner"
-      admin_access: true
-      admin_users:
+      spawner_class: "checkpointer-spawner.CheckpointSpawner" # tell Hub to use CheckpointSpawner as Spawner
+      admin_users: # setup one admin user, jovyan1 has no meaning it is just historically used
         - jovyan1
