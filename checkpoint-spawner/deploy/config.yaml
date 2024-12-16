@@ -25,3 +25,6 @@ hub:
     Authenticator:
       admin_users: # setup one admin user, name jovyan has no special meaning behind it is just historically used
         - jovyan
+#    Uncomment bellow if your Kubernetes Service for Checkpointer has custom name. (hub.config.CheckpointSpawner.checkpoint_service_name)
+#    CheckpointSpawner:
+#      checkpoint_service_name: "my-custom-service.kube-system"

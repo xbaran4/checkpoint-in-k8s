@@ -30,7 +30,6 @@ spec:
   containers:
   - name: timer
     image: pbaran555/timer:1.0.0
-    imagePullPolicy: Always
 EOF
 ```
 
@@ -44,4 +43,21 @@ Seconds from start: 3
 .
 Seconds from start: 180
 Exiting after 180 seconds
+```
+
+See [Checkpointer's README.md](checkpointer/README.md) how you can checkpoint the container.
+
+You can then create Pod from checkpointed container image
+```shell
+kubectl apply -f - <<EOF
+apiVersion: v1
+kind: Pod
+metadata:
+  name: timer-sleep-checkpointed
+  namespace: default
+spec:
+  containers:
+  - name: timer
+    image: pbaran555/kaniko-checkpointed:6e18d3f20ce35e2d
+EOF
 ```

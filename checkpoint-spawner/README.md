@@ -46,6 +46,7 @@ docker push pbaran555/hub-checkpoint-spawner:1.0.0 # replace with custom image n
 
 ## Deploying
 
+Inspect the `deploy/config.yaml` if you would like to customize your deployment in any way.
 To deploy Z2JH JupyterHub with CheckpointSpawner, run:
 ```shell
 helm upgrade --cleanup-on-fail \

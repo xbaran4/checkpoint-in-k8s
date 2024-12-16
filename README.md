@@ -69,13 +69,13 @@ See [CheckpointSpawner's README.md](checkpoint-spawner/README.md) for details.
 In case you would like to expose JupyterHub publicly outside the cluster,
 [CheckpointSpawner's README.md](checkpoint-spawner/README.md) contains a kubectl command for that.
 
-Login to JupyterHub (Z2JH is by default configured with DummyAuthenticator so any user can log in) and spawn a Notebook.
-
+Login to JupyterHub (Z2JH is by default configured with DummyAuthenticator so any user can log in) and spawn a Notebook. 
 Do whatever you would like in the Notebook, then stop the Notebook through the JupyterHub UI.
 
-Start the Notebook again, wait and observe that the Notebook is in the same state as before stopping.
-Even though the `config.yaml` does not set any permanent storage for the Notebooks, the file system changes are
-preserved. 
+Start the Notebook again. If you started the Notebook right after stopping, you should see a message informing
+you that checkpointing is still in progress. Wait for JupyterHub to redirect you to the checkpointed Notebook and
+observe that the Notebook is in the same state as before stopping.
 
-Note that TCP connection had to be closed due to different Pod IP of the Notebook. This might influence the output of
+Even though the `config.yaml` does not set any permanent storage for the Notebooks, the file system changes are
+preserved. Note that TCP connection had to be closed due to different Pod IP of the Notebook. This might influence the output of
 the running code that Jupyter Notebook streams from Kernel to the browser.

@@ -1,3 +1,4 @@
+# DO NOT RUN THE SCRIPT AS A WHOLE - !/bin/sh is missing intentionally
 sudo -s
 
 printf "\n172.16.103.96 containerd-control-plane\n" >> /etc/hosts
