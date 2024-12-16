@@ -32,7 +32,7 @@ requires installation of CRIU binary and additional configuration of each Kubern
 
 ### 1. Setup Kubernetes cluster
 First, a Kubernetes cluster needs to be installed along with CRIU and chosen container runtime. The script
-[k8s-install-control.sh](scripts/k8s-install-control.sh) can be used in cut-and-paste manner to install the cluster.
+[k8s-install-node.sh](scripts/k8s-install-node.sh) can be used in cut-and-paste manner to install the cluster.
 
 Note that currently, restoring a container with `containerd` is not possible even in the latest release.
 A patched version of containerd must be installed.

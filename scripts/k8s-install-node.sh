@@ -21,11 +21,24 @@ EOF
 
 # Apply sysctl params without reboot
 sysctl --system
+# Prints:
+# br_netfilter           32768  0
+# bridge                311296  1 br_netfilter
 
 # Verify preconditions were successfully installed
 lsmod | grep br_netfilter
+# Prints:
+# overlay               151552  24
+
 lsmod | grep overlay
+# Prints:
+
+
 sysctl net.bridge.bridge-nf-call-iptables net.bridge.bridge-nf-call-ip6tables net.ipv4.ip_forward
+# Prints:
+# net.bridge.bridge-nf-call-iptables = 1
+# net.bridge.bridge-nf-call-ip6tables = 1
+# net.ipv4.ip_forward = 1
 
 
 ### Install Go
@@ -54,9 +67,9 @@ runc -v
 # libseccomp: 2.5.3
 
 
-### Install containerd containing CRIU interface implementation
-git clone ...
-git checkout
+### Install containerd containing CRIU interface implementation | FOR CRI-O skip this and continue further
+git clone https://github.com/adrianreber/containerd.git
+git checkout 2024-06-19-restore-create-start
 make
 make install && cd ..
 containerd -v
@@ -65,7 +78,9 @@ containerd -v
 wget https://raw.githubusercontent.com/containerd/containerd/main/containerd.service -P /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable --now containerd
-systemctl status containerd
+# Run to check if the service is active:
+# systemctl status containerd
+
 
 mkdir -p /etc/containerd
 containerd config default | tee /etc/containerd/config.toml
@@ -90,84 +105,42 @@ criu --version
 # GitID: v3.19
 
 
-### Install Kubernetes
+### Install Kubernetes v1.30
 apt-get update && apt-get install -y apt-transport-https ca-certificates curl gpg
-curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.30/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.30/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list
+
+curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.30/deb/Release.key |
+    gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+
+echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.30/deb/ /" |
+    tee /etc/apt/sources.list.d/kubernetes.list
+
 sudo apt-get update && apt-get install -y kubelet kubeadm kubectl
 sudo apt-mark hold kubelet kubeadm kubectl
 
 
-
-
-
-
-
-# Install cri-o and run it as a systemd service
-KUBERNETES_VERSION=v1.30
-PROJECT_PATH=prerelease:/main
-
-curl -fsSL https://pkgs.k8s.io/core:/stable:/$KUBERNETES_VERSION/deb/Release.key |
-    gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-
-echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/$KUBERNETES_VERSION/deb/ /" |
-    tee /etc/apt/sources.list.d/kubernetes.list
-
-curl -fsSL https://pkgs.k8s.io/addons:/cri-o:/$PROJECT_PATH/deb/Release.key |
+# Install CRI-O v1.30 and run it as a systemd service
+curl -fsSL https://pkgs.k8s.io/addons:/cri-o:/stable:/v1.30/deb/Release.key |
     gpg --dearmor -o /etc/apt/keyrings/cri-o-apt-keyring.gpg
 
-echo "deb [signed-by=/etc/apt/keyrings/cri-o-apt-keyring.gpg] https://pkgs.k8s.io/addons:/cri-o:/$PROJECT_PATH/deb/ /" |
+echo "deb [signed-by=/etc/apt/keyrings/cri-o-apt-keyring.gpg] https://pkgs.k8s.io/addons:/cri-o:/stable:/v1.30/deb/ /" |
     tee /etc/apt/sources.list.d/cri-o.list
 
-apt-get update
-apt-get install -y cri-o kubelet kubeadm kubectl
-
+sudo apt-get update && apt-get install -y cri-o
 systemctl start crio.service
 
-### !!! CRI-O requires cgroupv1 https://github.com/cri-o/cri-o/issues/6972#issuecomment-1609524097
+### !!! Older versions of CRI-O require cgroupv1 for checkpoint/restore https://github.com/cri-o/cri-o/issues/6972#issuecomment-1609524097
 
-
-### OR containerd
-
-# Install containerd and run it as a systemd service https://github.com/containerd/containerd/blob/main/docs/getting-started.md
-wget https://github.com/containerd/containerd/releases/download/v1.6.16/containerd-1.6.16-linux-amd64.tar.gz -P /tmp/
-tar Cxzvf /usr/local /tmp/containerd-1.6.16-linux-amd64.tar.gz
-wget https://raw.githubusercontent.com/containerd/containerd/main/containerd.service -P /etc/systemd/system/
-systemctl daemon-reload
-systemctl enable --now containerd
-
-wget https://github.com/opencontainers/runc/releases/download/v1.1.4/runc.amd64 -P /tmp/
-install -m 755 /tmp/runc.amd64 /usr/local/sbin/runc
-
-wget https://github.com/containernetworking/plugins/releases/download/v1.2.0/cni-plugins-linux-amd64-v1.2.0.tgz -P /tmp/
-mkdir -p /opt/cni/bin
-tar Cxzvf /opt/cni/bin /tmp/cni-plugins-linux-amd64-v1.2.0.tgz
-
-mkdir -p /etc/containerd
-containerd config default | tee /etc/containerd/config.toml # <<<<<<< manually edit and change systemdCgroup to true
-
-systemctl restart containerd
-
-# Update system apps and add kubernetes binaries repos https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/install-kubeadm/
-apt-get update
-apt-get install -y apt-transport-https ca-certificates curl gpg
-curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.26/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.26/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list
-apt-get update
-
-
+# Might be useful to reboot but should not be required
 # reboot
 # sudo -s
-
-apt-get install -y kubelet kubeadm kubectl
-apt-mark hold kubelet kubeadm kubectl
 
 ### ONLY ON CONTROL NODE .. control plane install:
 kubeadm init --pod-network-cidr=192.168.0.0/16 --node-name=control-plane
 
-# Install Calico CNI https://docs.tigera.io/calico/latest/getting-started/kubernetes/quickstart 
-kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.27.2/manifests/tigera-operator.yaml
-kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.27.2/manifests/custom-resources.yaml
+# Install Flannel CNI as it is more lightweight than Calico https://github.com/flannel-io/flannel/blob/master/README.md
+wget https://github.com/flannel-io/flannel/releases/latest/download/kube-flannel.yml
+# Edit kube-flannel.yml with pod-network-cidr you are using, in this case 192.168.0.0/16
+kubectl apply -f kube-flannel.yml
 
 # get worker node commands to run to join additional nodes into cluster
 kubeadm token create --print-join-command
