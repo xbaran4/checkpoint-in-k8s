@@ -21,6 +21,6 @@ hub:
     type: "sqlite-memory" # allows deploying the Hub container without PersistentVolume
   config:
     JupyterHub:
-      spawner_class: "checkpointer-spawner.CheckpointSpawner" # tell Hub to use CheckpointSpawner as Spawner
+      spawner_class: "checkpoint-spawner.CheckpointSpawner" # tell Hub to use CheckpointSpawner as Spawner
       admin_users: # setup one admin user, jovyan1 has no meaning it is just historically used
         - jovyan1
