@@ -22,5 +22,6 @@ hub:
   config:
     JupyterHub:
       spawner_class: "checkpoint-spawner.CheckpointSpawner" # tell Hub to use CheckpointSpawner as Spawner
-      admin_users: # setup one admin user, jovyan1 has no meaning it is just historically used
-        - jovyan1
+    Authenticator:
+      admin_users: # setup one admin user, name jovyan has no special meaning behind it is just historically used
+        - jovyan
