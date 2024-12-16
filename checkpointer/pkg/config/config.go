@@ -150,7 +150,8 @@ func LoadGlobalConfig() (GlobalConfig, error) {
 		log.Info().Msg("DISABLE_ROUTE_FORWARD enabled, this should only be set in single-node cluster")
 	}
 	if config.UseKanikoFS = os.Getenv("USE_KANIKO_FS") == "true"; config.UseKanikoFS {
-		log.Info().Msg("USE_KANIKO_FS enabled, make sure Checkpointer has appropriate volume mounts")
+		log.Info().Msg("USE_KANIKO_FS enabled, doubling kaniko timeout, make sure Checkpointer has appropriate volume mounts")
+		config.CheckpointConfig.KanikoTimeoutSeconds = config.CheckpointConfig.KanikoTimeoutSeconds * 2
 		config.CheckpointConfig.KanikoBuildContextDir = getOrDefault("KANIKO_BUILD_CTX_DIR", "/tmp/checkpointer/build-contexts")
 	}
 	return config, nil
